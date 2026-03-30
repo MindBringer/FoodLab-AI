@@ -1,7 +1,7 @@
 services:
   llm-router:
     build:
-      context: ../services/llm-router
+      context: ./services/llm-router
     container_name: llm-router
     restart: unless-stopped
     environment:
@@ -20,7 +20,7 @@ services:
     container_name: vllm
     restart: unless-stopped
     profiles: ["nvidia"]
-    command: ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct}", "--host", "0.0.0.0", "--port", "8000", "--gpu-memory-utilization", "0.88", "--max-model-len", "8192"]
     environment:
       HF_HOME: ${HF_HOME:-/srv/ai-gpu/cache/huggingface}
     volumes:
@@ -40,22 +40,19 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
-    profiles: ["amd", "cpu", "nvidia"]
+    profiles: ["amd", "cpu"]
     environment:
       OLLAMA_KEEP_ALIVE: 24h
     volumes:
       - /srv/ai-gpu/models/ollama:/root/.ollama
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
-    devices:
-      - /dev/kfd:/dev/kfd
-      - /dev/dri:/dev/dri
     group_add: [video, render]
     networks: [foodlab-ai]
 
   audio-api:
     build:
-      context: ../services/audio-api
+      context: ./services/audio-api
     container_name: audio-api
     restart: unless-stopped
     environment:
