@@ -28,7 +28,11 @@ services:
       - ${QDRANT_DATA_DIR:-/srv/foodlab/qdrant}:/qdrant/storage
     ports:
       - "${QDRANT_PORT:-6333}:6333"
-    networks: [foodlab-svc, foodlab-svc-bridge]
+    networks:
+      foodlab-svc:
+      foodlab-svc-bridge:
+        aliases:
+          - qdrant-svc
 
   parser-service:
     build:
