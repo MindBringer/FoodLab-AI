@@ -1,166 +1,429 @@
 # FoodLab
 
-Modulare AI- und Dokumentverarbeitungsplattform für lokale oder hybride Deployments. FoodLab nimmt Texte und Dateien entgegen, extrahiert Inhalte, verarbeitet sie regelbasiert und per LLM, normalisiert die Ergebnisse in strukturierte JSON-Antworten und stellt sie über eine stabile API für Prozesssysteme wie Power Automate bereit.
+Modulare AI-, Dokumenten- und Retrieval-Plattform für lokale oder hybride Deployments.
+
+FoodLab ist kein einzelner Fachprozess und keine einzelne Benutzeroberfläche, sondern die gemeinsame Verarbeitungs- und Wissensbasis für mehrere Eingangskanäle und Use Cases. Externe Systeme, Frontends und Automationen können auf denselben Core und dieselben internen Dienste aufsetzen, ohne Parsing, RAG, LLM-Anbindung, Audio oder Workflow-Logik jeweils neu erfinden zu müssen.
 
 ---
 
 ## Zielsetzung
 
-FoodLab soll einen belastbaren Kern für dokumenten- und textgetriebene Fachprozesse bereitstellen. Der Fokus liegt nicht auf einem generischen Chat-System, sondern auf einem reproduzierbaren Verarbeitungsweg für operative Integrationen.
+FoodLab stellt einen belastbaren Kern für dokumenten-, text- und wissensgetriebene Fachprozesse bereit.
 
-Ziele:
+Der Fokus liegt auf:
 
-- standardisierte API für externe Systeme
-- Entkopplung von Fachlogik und AI-Runtime
-- saubere Trennung von Service-Node und GPU-Node
-- normierte JSON-Ergebnisse statt freier Modellantworten
-- synchrone und asynchrone Verarbeitung großer Eingaben
-- Erweiterbarkeit für RAG, Audio, OCR und Workflow-Automatisierung
-- lokaler oder hybrider Betrieb ohne Cloud-Zwang
+- einer stabilen Core-API für externe und interne Einstiegspunkte
+- einer gemeinsamen Basis für Parsing, OCR, RAG, Audio und LLM-Nutzung
+- einer klaren Trennung zwischen Einstiegskanälen, Produktkern und AI-Runtime
+- normierten, versionierten JSON-Ergebnissen statt freier Modellantworten
+- einfacher Sicherung, Wiederherstellung und Wartung
+- hohem Sicherheitsniveau bei lokaler oder hybrider Betriebsform
+- horizontaler Skalierbarkeit ohne Architekturbruch
 
----
-
-## Aktueller Stand
-
-Der aktuelle Stand besteht aus zwei sich ergänzenden Ebenen:
-
-1. **Betriebs- und Runtime-Ebene**
-   - `setup-stack-v3-apps.sh` trennt den Stack in `svc`- und `gpu`-Rolle.
-   - Der GPU-Teil betreibt `llm-router`, `vllm`, `ollama` und `audio-api`.
-   - Zwischen Service- und GPU-Seite existiert das gemeinsame Netz `foodlab-svc-bridge`.
-
-2. **FoodLab-Core als Referenzimplementierung**
-   - `foodlab_install.sh` beschreibt einen modularen lokalen Stack mit `foodlab-api`, `foodlab-worker`, `foodlab-postgres`, `foodlab-tika` und `foodlab-ollama` als Core.
-   - Erweiterungen sind `foodlab-qdrant`, `foodlab-rag`, `foodlab-audio`, `foodlab-n8n` und `foodlab-frontend`.
-   - Zusätzlich wird eine OpenAPI für die Core-API erzeugt.
-
-Diese Kombination definiert heute sowohl das Zielbild als auch eine bereits lauffähige Referenz für den Kern.
+FoodLab ist damit die einheitliche Plattform unter mehreren Nutzungsszenarien, nicht die UI oder Prozesslogik eines einzelnen Anwendungsfalls.
 
 ---
 
-## Architektur
+## Leitbild
 
-### 1. Gesamtbild
+FoodLab bündelt gemeinsame AI- und Dokumentfunktionen zentral und stellt sie über stabile Schnittstellen bereit.
 
-```text
-Power Automate / On-Prem Gateway / andere Clients
-                    |
-                    v
-              foodlab-api
-                    |
-        +-----------+-----------+
-        |                       |
-        v                       v
-  Postgres / Jobstatus     foodlab-worker
-                                |
-          +---------------------+----------------------+
-          |                     |                      |
-          v                     v                      v
-        Tika            Regex / Fachlogik        LLM-Aufruf
-                                                      |
-                                                      v
-                                                llm-router
-                                                      |
-                              +-----------------------+----------------------+
-                              |                                              |
-                              v                                              v
-                            vLLM                                           Ollama
-                          (NVIDIA)                                    (CPU/AMD/Fallback)
-```
+Das bedeutet:
 
-### 2. Rollenmodell
+- Power Automate kann Dokumente oder Texte einreichen und strukturierte Ergebnisse erhalten.
+- Ein Ticketsystem kann dieselbe Plattform für Klassifikation, Analyse und Wissensaufbau nutzen.
+- Ein Frontend kann direkte Chat-, Agenten- oder Recherchefunktionen auf denselben Core und dieselben Wissensdienste aufsetzen.
+- Weitere Eingänge wie Webhooks, Watch-Folder, Mail-Ingest oder Fachanwendungen können anschließen, ohne die darunterliegende Plattform zu duplizieren.
 
-#### Service Node (`svc`)
+---
 
-Der Service-Node enthält die produktnahe Verarbeitungslogik:
+## Mehrere Eingangskanäle / Startpfade
+
+FoodLab unterstützt bewusst mehrere gleichwertige Einstiegspfade.
+
+### 1. Prozesssysteme und Automatisierung
+
+Beispiele:
+
+- Power Automate
+- M365-nahe Workflows
+- n8n
+- Webhooks
+- Batch- oder File-Drop-Prozesse
+
+Typischer Modus:
+
+- Text oder Datei wird eingereicht
+- FoodLab analysiert
+- Ergebnis wird als kontrolliertes JSON zurückgegeben
+- Folgeprozesse arbeiten mit stabilen Strukturen statt mit Freitext
+
+### 2. Fachanwendungen / Use-Case-spezifische Oberflächen
+
+Beispiele:
+
+- Ticketsystem
+- Power App
+- interne Formulare
+- domänenspezifische Oberflächen
+
+Diese Systeme liefern Kontext, Pflichtfelder, UX und Prozesslogik, verwenden aber dieselbe Verarbeitungsbasis darunter.
+
+### 3. Direktes Frontend / Chat / Agenten
+
+FoodLab kann zusätzlich eine direkte Benutzeroberfläche für:
+
+- Chat mit LLM
+- agentische Assistenz
+- semantische Recherche über RAG
+- Debugging / Operations
+- manuelle Uploads und Analysen
+
+bereitstellen.
+
+Das Frontend ist damit kein Widerspruch zum API-zentrierten Kern, sondern ein weiterer kontrollierter Zugriffspfad auf dieselbe Plattform.
+
+### 4. Interne oder technische Ingestion-Pfade
+
+Beispiele:
+
+- Watch-Folder
+- Mail-Ingest
+- SharePoint-Exporte
+- geplante Synchronisationen
+- systeminterne Jobs
+
+Auch diese Pfade sollen dieselben Parsing-, Normalisierungs- und Wissensdienste verwenden.
+
+---
+
+## Architekturprinzipien
+
+### 1. Shared Platform statt Einzellösungen
+
+Parsing, OCR, Embeddings, Retrieval, LLM-Routing, Audio und Workflow-Bausteine werden zentral bereitgestellt und von mehreren Einstiegskanälen gemeinsam genutzt.
+
+### 2. Core first
+
+Die Core-API ist der offizielle und stabile Einstiegspunkt für externe Integrationen. Interne Hilfsdienste bleiben austauschbar und sind nicht Teil des externen Produktvertrags.
+
+### 3. Internal by default
+
+RAG, Parsing, Embedding, LLM-Backend, Audio, Queue, Datenbanken und Hilfsdienste sind standardmäßig intern. Exponiert wird nur, was fachlich und sicherheitstechnisch nötig ist.
+
+### 4. Joborientierte Verarbeitung
+
+FoodLab verarbeitet Texte, Dateien und künftig weitere Eingaben bewusst jobbasiert. Das erhöht Robustheit, Nachvollziehbarkeit, Retry-Fähigkeit und Skalierbarkeit.
+
+### 5. Regeln plus LLM
+
+Regelbasierte Vorprüfung, Extraktion und Normalisierung bleiben Pflicht. LLMs ergänzen die Fachlogik, ersetzen sie aber nicht.
+
+### 6. JSON als Produktvertrag
+
+Das Ergebnisformat ist serverseitig kontrolliert, validiert und versioniert. Maßgeblich ist nicht, was das Modell „ungefähr“ ausgibt, sondern was die Plattform als belastbares API-Ergebnis garantiert.
+
+### 7. Zentrale Wissensbasis
+
+Retrieval und semantische Suche sind keine Einzelfunktion eines Use Cases, sondern eine gemeinsame Plattformfähigkeit. Mehrere Systeme können auf denselben Wissensbestand aufsetzen.
+
+---
+
+## Architekturebenen
+
+### 1. Entry / Experience Layer
+
+Diese Schicht bildet alle Einstiegspunkte und Benutzerkontakte ab.
+
+Beispiele:
+
+- Power Automate
+- Ticketsystem / Power App
+- Frontend / Chat / Agenten
+- n8n-Workflows
+- Webhooks
+- Watch-Folder / Mail-Ingest
+- weitere Fachanwendungen
+
+Verantwortung:
+
+- Benutzerführung
+- fachlicher Kontext
+- Trigger und Orchestrierung
+- Übergabe strukturierter Eingaben an den Core
+
+### 2. Integration Layer
+
+Verantwortung:
+
+- Annahme externer Requests
+- API-Key- oder Token-basierte Authentifizierung
+- OpenAPI / Schnittstellenvertrag
+- synchrone oder asynchrone Job-Einreichung
+- Status- und Ergebnisabholung
+
+Dienst:
 
 - `foodlab-api`
+
+### 3. Core Processing Layer
+
+Verantwortung:
+
+- Jobverwaltung
+- Dateiregistrierung
+- Orchestrierung
+- Status und Fortschritt
+- Ergebnisaggregation
+- fachliche und technische Normalisierung
+- Übergang zwischen Eingabekanälen und internen Diensten
+
+Dienste:
+
 - `foodlab-worker`
 - `postgres`
+- Dateispeicher
+- optional Queue
+
+### 4. Ingestion / Extraction Layer
+
+Verantwortung:
+
+- Entgegennahme und Extraktion von Texten und Dokumenten
+- Parsing nach Dateityp
+- OCR bei gescannten Dokumenten
+- E-Mail- und Attachment-Verarbeitung
+- domänenspezifische Vorverarbeitung
+
+Dienste:
+
+- `parser-service`
 - `tika`
-- optional `qdrant`
-- optional `rag`
-- optional `n8n`
-- optional `frontend`
-- Datenverzeichnisse für Inbox, Rohdaten, Ergebnisse und OCR
+- `ocr-service`
+- `mail-ingest-service`
+- Regex- und Regelmodule
 
-#### GPU Node (`gpu`)
+### 5. Knowledge / Retrieval Layer
 
-Der GPU-Node kapselt AI-Runtime und spezialisierte Beschleunigung:
+Verantwortung:
+
+- Dokumentnormalisierung
+- Chunking
+- Embeddings
+- Indexierung
+- semantische Suche
+- zitierfähige Retrieval-Ergebnisse
+- zentrale Wissenshaltung für mehrere Consumer
+
+Dienste:
+
+- `embedding-service`
+- `rag-service`
+- `qdrant`
+
+### 6. AI Runtime Layer
+
+Verantwortung:
+
+- einheitliche interne Modellansteuerung
+- Backend-Routing
+- Providerwahl und Fallbacks
+- hardwareabhängige Ausführung
+
+Dienste:
 
 - `llm-router`
-- `vllm` für NVIDIA
-- `ollama` für CPU/AMD/Fallback
+- `vllm`
+- `ollama`
+
+### 7. Audio Layer
+
+Verantwortung:
+
+- Transkription
+- Speaker Enrollment / Identify
+- optionale Diarization
+- Audio-Metadaten
+
+Dienste:
+
 - `audio-api`
-- Modellcache und Audio-Datenablage
+- optional separater Diarization-Service
 
-### 3. Trennlinie Core vs. Extensions
+### 8. Workflow / Operations Layer
 
-#### Core
+Verantwortung:
 
-Alles, was für den FoodLab-Kern zwingend benötigt wird:
+- Automatisierung
+- technische und operative Workflows
+- internes UI / BFF
+- Monitoring-nahe Hilfsfunktionen
+
+Dienste:
+
+- `n8n`
+- `frontend`
+- optional Reverse Proxy / Nginx
+
+---
+
+## Gesamtbild
+
+```text
+Power Automate / Ticketsystem / Frontend / Webhooks / Watch-Folder / weitere Clients
+                                     |
+                                     v
+                               foodlab-api
+                                     |
+                     +---------------+----------------+
+                     |                                |
+                     v                                v
+                Postgres / Queue                 foodlab-worker
+                                                         |
+                +--------------------+-------------------+-------------------+
+                |                    |                   |                   |
+                v                    v                   v                   v
+          Parsing / OCR        Regex / Fachlogik   Knowledge / RAG      LLM-Aufruf
+                |                                      |                   |
+                v                                      v                   v
+        parser / tika / OCR                  embedding / qdrant      llm-router
+                                                                            |
+                                           +--------------------------------+-------------------+
+                                           |                                                    |
+                                           v                                                    v
+                                         vLLM                                                 Ollama
+                                       (NVIDIA)                                       (CPU/AMD/Fallback)
+```
+
+---
+
+## Rollenmodell
+
+### Service Node (`svc`)
+
+Der Service Node enthält die produktnahe Plattformlogik und die meisten persistierenden Kernkomponenten.
+
+Typische Dienste:
 
 - `foodlab-api`
 - `foodlab-worker`
 - `postgres`
+- `redis` optional bzw. perspektivisch Standard für Queueing
+- `parser-service`
 - `tika`
-- Zugriff auf LLM-Runtime über `llm-router`
-
-#### Extensions
-
-Optionale oder interne Erweiterungen:
-
+- `ocr-service`
+- `mail-ingest-service`
+- `embedding-service`
+- `rag-service`
 - `qdrant`
-- `rag`
-- `audio`
 - `n8n`
 - `frontend`
+- `nginx`
 
-Diese Trennung ist fachlich wichtig: Externe Prozesssysteme sollen nur den Core sehen, nicht die internen Hilfsdienste.
+### GPU Node (`gpu`)
+
+Der GPU Node kapselt runtime-nahe AI-Dienste und spezialisierte Beschleunigung.
+
+Typische Dienste:
+
+- `llm-router`
+- `vllm`
+- `ollama`
+- `audio-api`
+- optional Diarization-Service
+
+### Gemeinsames Netz
+
+Die Knoten kommunizieren über dedizierte interne Netzsegmente. Extern sichtbar ist nur die definierte Zugriffsschicht, nicht die darunterliegenden Hilfsdienste oder Modellserver.
+
+---
+
+## Core vs. Shared Internals vs. Use Cases
+
+### Core
+
+Alles, was für den stabilen Produktkern zwingend erforderlich ist:
+
+- `foodlab-api`
+- `foodlab-worker`
+- `postgres`
+- Dateispeicher
+- definierte interne Anbindung an Parsing- und LLM-Schicht
+
+### Shared Internal Services
+
+Gemeinsame Fähigkeiten, die von mehreren Use Cases genutzt werden:
+
+- Parsing
+- OCR
+- Mail-Ingest
+- Embeddings
+- RAG / Qdrant
+- Audio
+- Queue
+- n8n
+- Frontend / BFF
+- Reverse Proxy
+- Monitoring / Audit / Backups
+
+### Use Cases / Consumer
+
+Aufsetzende Systeme, die FoodLab nutzen, aber nicht der Plattformkern selbst sind:
+
+- Power-Automate-Integration
+- Ticketsystem
+- direkte Chat-/Agenten-Oberfläche
+- interne Recherche- oder Wissensoberflächen
+- weitere Fachprozesse
+
+Diese Trennung verhindert, dass jeder neue Anwendungsfall eigene Parsing-, LLM- oder RAG-Infrastruktur mitbringt.
 
 ---
 
 ## FoodLab-Kern
 
-Der FoodLab-Kern ist eine joborientierte Dokument- und Texteingangsplattform.
+Der FoodLab-Kern ist eine joborientierte Eingangs- und Verarbeitungsplattform für Texte, Dateien und künftig weitere Eingangstypen.
 
 ### Aufgaben des Kerns
 
-- Annahme von Texten und Dateien
+- Annahme von Texten, Dateien und Metadaten
 - persistente Ablage der Eingänge
 - Erstellung und Verwaltung von Jobs
-- Extraktion von Textinhalten aus Dateien
-- fachliche Vorverarbeitung per Regex / Regeln
-- Prompt-Aufbau für die AI-Verarbeitung
-- Aufruf der LLM-Runtime
+- Aufruf interner Parsing- und Ingestion-Dienste
+- fachliche Vorverarbeitung per Regeln / Regex
+- Prompt-Aufbau und Modellorchestrierung
+- Nutzung von Retrieval, wenn fachlich sinnvoll
 - Normalisierung und Aggregation der Ergebnisse
-- Bereitstellung eines stabilen JSON-Ergebnisses
+- Bereitstellung stabiler JSON-Ergebnisse
 - Nachvollziehbarkeit über Jobstatus, Resultate und Fehler
 
-### Warum Job-basiert
+### Warum jobbasiert
 
-Das Jobmodell ist bewusst gewählt, weil es für Integrationen robuster ist als reine Request/Response-LLM-Endpunkte:
+Das Jobmodell ist bewusst gewählt, weil es robuster ist als reine Completion-Endpunkte:
 
 - große Dateien können asynchron verarbeitet werden
-- Power Automate kann pollen statt auf lange HTTP-Requests zu warten
-- Fehler und Teilresultate bleiben nachvollziehbar
-- mehrstufige Verarbeitung wird möglich
+- Clients müssen keine langen HTTP-Requests offenhalten
+- Retries und Leasing sind sauber abbildbar
+- Teilresultate und Fehler bleiben nachvollziehbar
+- mehrstufige Pipelines werden möglich
+- mehrere Einstiegspfade können dieselbe Abarbeitungslogik nutzen
 
 ---
 
 ## API-Konzept
 
-Die Core-API ist die einzige externe Integrationsfläche für Prozesssysteme.
+Die Core-API ist die offizielle Integrationsfläche für externe Systeme und aufsetzende Anwendungen.
 
 ### Leitprinzipien
 
-- keine direkte Anbindung externer Systeme an `llm-router`
-- keine direkte Exponierung von RAG, Audio oder Frontend
-- Authentifizierung über API-Key
+- keine direkte Anbindung externer Systeme an Modellserver
+- keine direkte Exponierung von Qdrant, Embedding, Parsing oder Audio
+- Authentifizierung über API-Key, später ausbaubar auf feinere Token-/Rollenmodelle
 - JSON-first
 - OpenAPI als stabiler Vertragsbestandteil
+- klare Trennung zwischen offiziellen und internen Endpunkten
 
-### Vorgesehene Kern-Endpunkte
+### Offizielle Kern-Endpunkte
 
 - `GET /health`
 - `POST /api/v1/jobs/text`
@@ -168,137 +431,201 @@ Die Core-API ist die einzige externe Integrationsfläche für Prozesssysteme.
 - `GET /api/v1/jobs/{job_id}`
 - `GET /api/v1/jobs/{job_id}/result`
 
-### Sync- und Async-Modus
+### Interne Dienste
 
-#### Synchron
+Beispiele für interne Endpunkte bzw. interne Serviceverträge:
 
-Für kleine Inputs kann `wait=true` genutzt werden. Die API wartet dann bis zum Abschluss oder Timeout und gibt direkt das Ergebnis zurück.
+- Parsing
+- OCR
+- Mail-Ingest
+- Embeddings
+- RAG Index / Query
+- interne LLM-Calls
+- Audio-Funktionen
 
-#### Asynchron
-
-Für größere Dateien oder längere LLM-Laufzeiten wird ein Job erzeugt. Der Client erhält `job_id` und pollt anschließend den Status oder das Resultat.
-
----
-
-## Verarbeitungsfluss
-
-### 1. Text- oder Dateiannahme
-
-Ein Client übergibt:
-
-- Prompt
-- Text oder Datei(en)
-- optionale Korrelation-ID
-- optionales Warten auf Abschluss
-
-### 2. Persistenz und Jobanlage
-
-Die API:
-
-- erzeugt eine `job_id`
-- speichert Uploads in die Inbox
-- legt Job und Job-Dateien in Postgres an
-
-### 3. Claiming durch Worker
-
-Der Worker:
-
-- claimt die nächste offene Datei
-- verwendet Leasing / Reaper gegen hängengebliebene Verarbeitung
-- setzt Jobstatus und Fortschritt
-
-### 4. Extraktion
-
-- Textdateien werden direkt gelesen
-- andere Formate werden über Tika in Plaintext überführt
-
-### 5. Vorverarbeitung
-
-- Regex- und Regelvorprüfung
-- erste strukturierte Extraktion
-- Warnungen und Vorbefunde
-
-### 6. LLM-Verarbeitung
-
-- Aufbau eines fachlichen Prompts
-- LLM-Aufruf über `llm-router`
-- bevorzugte Rückgabe als JSON
-
-### 7. Normalisierung
-
-- Zusammenführung von Regex-Vorprüfung und LLM-Ergebnis
-- Ableitung eines normierten flachen Resultats
-- Ablage in DB und Result-Datei
-
-### 8. Abschluss
-
-- Aggregation über alle Dateien eines Jobs
-- finaler Jobstatus `done` oder `error`
-- Ergebnisabholung per API
+Diese sind nicht Teil des externen Vertrags und sollen nur kontrolliert intern erreichbar sein.
 
 ---
 
-## Daten- und Dateitypen
+## Sync- und Async-Modus
 
-### Bereits sinnvoll abgedeckt
+### Synchron
 
-- `txt`
-- `csv`
-- `md`
-- allgemeine Dokumentformate über Tika
-- viele Office-Dokumente einschließlich `xlsx`, sofern Extraktion über Tika ausreicht
+Für kleine oder schnelle Eingaben kann der Client auf Abschluss warten.
 
-### Noch als Fachlogik zu ergänzen
+Geeignet für:
 
-- spezialisierte E-Mail-Verarbeitung für `eml` / `msg`
-- HTML-Body / Plaintext-Body-Trennung
-- Header-Extraktion
-- Attachment-spezifische Behandlung
-- domänenspezifische Parser für strukturierte Labordokumente
+- kurze Texte
+- kleine Dokumente
+- einfache Klassifikation oder Extraktion
+- direkte Frontend- oder Flow-Schritte mit kurzer Laufzeit
+
+### Asynchron
+
+Für größere oder langsamere Jobs wird ein Job erzeugt und später abgefragt.
+
+Geeignet für:
+
+- PDFs
+- Office-Dokumente
+- E-Mails mit Anhängen
+- Retrieval- oder Agentenketten
+- komplexere Analysen
+- Batch- oder Workflow-Verarbeitung
 
 ---
 
-## Power-Automate-Integration
+## Gemeinsame Wissensbasis / RAG
 
-Power Automate spricht nicht direkt mit dem Modell, sondern mit der Core-API.
+RAG ist keine Insellösung eines einzelnen Features, sondern eine zentrale Plattformfähigkeit.
 
-### Zielpfad
+### Zielbild
+
+- zentrale Vektorhaltung
+- zentrale Chunk- und Metadatenlogik
+- mehrere Datenquellen
+- mehrere Abfragepfade
+- einheitliche Embedding-Strategie
+- Wiederverwendung desselben Wissensbestands durch verschiedene Einstiegskanäle
+
+### Typische Quellen
+
+- verarbeitete Dokumente
+- SharePoint-basierte Wissensbestände
+- Support-Dokumentation
+- hochgeladene Referenzdokumente
+- strukturierte oder halbstrukturierte Fachunterlagen
+
+### Typische Consumer
+
+- Chat / Agenten
+- interne Recherche
+- Ticketsystem
+- Automationen
+- analytische oder dokumentbezogene Assistenzfunktionen
+
+### Grundregel
+
+Qdrant bzw. der Retrieval-Bestand ist in der Regel ein sekundärer Such- und Arbeitsindex. Führende Primärsysteme für Stammdaten, Geschäftsobjekte oder revisionsrelevante Dokumentation bleiben fachlich getrennt.
+
+---
+
+## Frontend / Chat / Agenten
+
+FoodLab kann neben der API eine direkte Oberfläche bereitstellen.
+
+### Mögliche Rollen des Frontends
+
+- manuelle Dokumentanalyse
+- semantische Recherche
+- Chat mit LLM
+- Agentenfunktionen
+- Operations- und Debugging-UI
+- kontrollierter Zugriff auf interne Shared Services
+
+### Architekturelle Einordnung
+
+Das Frontend ist kein Ersatz für den Core und auch kein Sonderweg. Es ist ein weiterer Einstiegskanal, der dieselben Kern- und Wissensdienste nutzt.
+
+Damit bleibt Folgendes erhalten:
+
+- direkte Benutzerinteraktion
+- schnelle Validierung neuer Fähigkeiten
+- einheitliche Backend-Basis
+- keine doppelte Logik neben Power Automate oder Ticketsystem
+
+---
+
+## Beispielhafte Use Cases
+
+### 1. Power-Automate-Analyse
 
 ```text
-Power Automate -> On-Premises Data Gateway -> foodlab-api
+Power Automate -> Core API -> Job -> Parsing / Regeln / LLM -> JSON-Ergebnis zurück an Power Automate
 ```
 
-### Übergabemodell
+### 2. Ticketsystem
 
-Power Automate übergibt:
+```text
+Power App / Ticketsystem -> Core API -> Analyse -> Ergebnis -> Dokumentation / Wissensaufbau / Nachverfolgung
+```
 
-- Text oder Datei
-- Prompt
-- optionale Metadaten
-- optional `correlation_id`
+### 3. Chat / Agent
 
-Die Antwort ist kein Freitext, sondern ein kontrolliertes JSON-Enveloping.
+```text
+Frontend -> BFF / Core / RAG -> LLM Router -> Antwort mit optionalem Retrieval-Kontext
+```
 
-### Vorteile dieses Modells
+### 4. Wissensindizierung
 
-- klare Abgrenzung zwischen Fach-API und Modellbetrieb
-- bessere Fehlerdiagnose
-- stabilere Connector-Definition
-- geringere Kopplung an konkrete Modelle
+```text
+Dokumentquelle / Upload / Sync -> Parsing -> Chunking -> Embedding -> Qdrant
+```
+
+Diese Abläufe nutzen dieselbe Plattformbasis, unterscheiden sich aber im Einstiegspunkt und in der Prozesslogik.
+
+---
+
+## Daten- und Ingestion-Modell
+
+### Quellen
+
+- Text
+- Datei-Uploads
+- E-Mail
+- SharePoint-Exporte
+- Webhooks
+- Watch-Folder
+- Audio
+- manuelle Eingaben über Frontend
+
+### Normalisiertes Zwischenformat
+
+Ziel ist eine interne Normalisierung, damit nachgelagerte Dienste nicht für jeden Eingangskanal neu implementiert werden müssen.
+
+Enthalten sein sollen unter anderem:
+
+- Dokument-ID
+- Quelle und Eingangskanal
+- Dateityp / Source Type
+- Titel / Name
+- Sprache
+- Abschnitte / Seiten / Anhänge
+- Metadaten
+- Sicherheitslabel
+- Referenzen auf Primärsysteme
+
+### Dateitypen
+
+Bereits bzw. perspektivisch relevant:
+
+- `txt`
+- `md`
+- `csv`
+- `json`
+- `pdf`
+- `docx`
+- `xlsx`
+- `pptx`
+- `eml`
+- `msg`
+- Bilder für OCR
+- Audio
 
 ---
 
 ## Normiertes JSON
 
-Der Zielzustand ist ein serverseitig validiertes, versioniertes Ergebnisformat.
+Der Zielzustand ist ein serverseitig validiertes, versioniertes und stabil nutzbares Ergebnisformat.
 
 ### Zielprinzipien
 
 - feste Top-Level-Struktur
-- Schema-Version im Response
-- fachliche Findings in standardisierter Liste
-- technische Metadaten getrennt von Fachdaten
-- Fehler als strukturierte Liste
+- Schema-Version
+- Trennung von Fachdaten und technischen Metadaten
+- strukturierte Fehlerliste
+- konsistente Felder über mehrere Einstiegskanäle hinweg
+- Erweiterbarkeit ohne Vertragsbruch
 
 ### Beispiel
 
@@ -312,141 +639,139 @@ Der Zielzustand ist ein serverseitig validiertes, versioniertes Ergebnisformat.
     "document_type": "lab_report",
     "sample_type": null,
     "product_name": null,
-    "findings": [
-      {
-        "parameter": "Gesamtkeimzahl",
-        "normalized_key": "gesamtkeimzahl",
-        "operator": "<=",
-        "value": 1000,
-        "unit": "KBE/g",
-        "category": "microbiology",
-        "status": "ok",
-        "raw_text": "..."
-      }
-    ],
+    "findings": [],
     "warnings": []
   },
   "meta": {
     "provider": "vllm",
-    "model": "Qwen/Qwen2.5-7B-Instruct"
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "processing_ms": 0,
+    "entry_channel": "power_automate"
   },
   "errors": []
 }
 ```
 
-Der aktuelle Referenzstand liefert bereits strukturierte JSON-Ergebnisse und ein flaches Resultat, aber das fachliche API-Schema muss noch explizit versioniert und serverseitig hart validiert werden.
+Langfristig sollen Fachschemas je Task oder Dokumentklasse auswählbar und serverseitig hart validierbar sein.
 
 ---
 
-## Betriebsmodell
+## Sicherheit
 
-### Deployment-Linien
+FoodLab ist auf hohe Sicherheit bei lokaler oder hybrider Betriebsform ausgelegt.
 
-#### 1. Referenz- / Dev-Deployment
+### Mindeststandard
 
-`foodlab_install.sh` erzeugt einen lokalen Podman-Stack als modulare Referenzimplementierung.
+- nur definierte externe Eintrittspunkte
+- API-Key oder Token an der Core-API
+- keine direkte Exponierung interner Hilfsdienste
+- Trennung interner und externer Netze
+- kontrollierte Upload-Limits
+- klare Fehlerantworten
+- reproduzierbare Datenhaltung
 
-Geeignet für:
+### Zielausbau
 
-- lokale Entwicklung
-- funktionale Validierung
-- Demo / Debugging
-- frühe Fachtests
+- Reverse Proxy als definierte Eintrittsschicht
+- TLS am Edge und bei Bedarf intern
+- feingranulare Rollen / Tokens / Service-Identitäten
+- Tenant- oder Bereichstrennung bei Bedarf
+- Audit-Logging
+- sichere Secret-Verwaltung
+- restriktive Standard-Exposition
+- Hardening der internen Servicekommunikation
 
-#### 2. Ziel-Deployment
+### Sicherheitsgrundsatz
 
-`setup-stack-v3-apps.sh` bildet das spätere Betriebsmodell mit getrenntem Service- und GPU-Node ab.
-
-Geeignet für:
-
-- produktionsnahe Deployments
-- Hardware-Trennung
-- GPU-Skalierung
-- klare Verantwortlichkeit zwischen Fachlogik und Inferenz
-
-### Konsolidierungsrichtung
-
-Die in `foodlab_install.sh` definierte Fachlogik wird als Referenz verstanden und schrittweise in die svc/gpu-Zielarchitektur überführt. Dauerhaft sollen nicht zwei konkurrierende Stacks gepflegt werden.
+Kein Consumer darf interne Systemdetails oder Modellserver direkt kennen müssen. Sicherheit und Austauschbarkeit hängen direkt zusammen.
 
 ---
 
-## Geplanter Endausbau
+## Backup, Restore und Wartung
 
-### 1. Core-Härtung
+FoodLab soll einfach zu sichern, reproduzierbar wiederherzustellen und mit geringer Betriebsvarianz wartbar sein.
 
-- versioniertes API-Schema
-- Pydantic-/JSON-Schema-Validierung
-- Retry bei ungültigem Modell-JSON
-- bessere Fehlercodes
-- Healthchecks und Readiness-Probes
-- API-Rate-Limits und Request-Size-Limits
+### Sicherungsebenen
 
-### 2. LLM-Orchestrierung
+- VM- oder Host-Snapshots vor größeren Änderungen
+- applikationskonsistente Sicherung von Postgres
+- Qdrant-Snapshots
+- Sicherung von Rohdateien, OCR-Ergebnissen, extrahiertem Text, Chunks und Resultaten
+- Sicherung von Konfiguration, Compose-Dateien und OpenAPI-Artefakten
+- Off-host-Backup
 
-- Worker ruft nicht mehr direkt Ollama auf
-- stattdessen ausschließlich `llm-router`
-- Provider-Auswahl nach Last, Modell, Verfügbarkeit und Use Case
-- Fallback-Ketten
+### Restore-Fälle
 
-### 3. Dokumentdomäne
+- nur Datenbank
+- nur Wissensindex
+- nur Dateispeicher
+- kompletter Service-Node
+- kompletter GPU-Node
+- vollständige Wiederherstellung der Plattform
 
-- spezialisierte Parser für E-Mail, XLSX und Laborberichte
-- regelbasierte Vorprüfung pro Dokumenttyp
-- Dokumentklassifikation
-- Schema-Auswahl pro Task
+### Wartungsprinzipien
 
-### 4. Queue und Skalierung
+- idempotentes Setup
+- deterministische Deployments
+- `.env` nicht ungefragt überschreiben
+- Daten nur bei explizitem Reset löschen
+- möglichst geringe Zahl konkurrierender Betriebsmodi
+- klare Upgrade- und Migrationspfade
 
-- Redis-gestützte Queue optional
+---
+
+## Skalierung
+
+FoodLab ist technisch auf horizontale und funktionale Skalierung ausgelegt.
+
+### Skalierungsachsen
+
 - mehrere Worker-Instanzen
-- horizontale Skalierung auf Dateiebene
-- Lastverteilung über mehrere GPU-Nodes
+- Queue-basierte Entkopplung
+- separater GPU-Node
+- mehrere GPU-Nodes perspektivisch
+- zentrale LLM-Zugriffsschicht
+- zentrale RAG-Datenhaltung
+- getrennte Skalierung von API, Worker, Retrieval und Runtime
 
-### 5. Retrieval und Wissensbasis
+### Warum das trägt
 
-- RAG als interne Erweiterung
-- dokumentbezogene Wissensindizierung
-- zitierfähige Retrieval-Antworten für interne Oberflächen
-
-### 6. Audio-Pipeline
-
-- Ersatz der Stub-Implementierung
-- Whisper / ASR
-- Speaker-Diarization
-- Audio-Metadaten und Speaker-Enrolment produktionsreif
-
-### 7. Workflow und UI
-
-- n8n für Prozessketten und Trigger
-- Frontend als internes Operations- und Debugging-UI
-- kein Zwang für Kernnutzung
-
-### 8. Observability und Betrieb
-
-- zentrales Logging
-- Metriken / Tracing
-- Audit-Trail
-- Backup- und Restore-Konzept
+Mehrere Einstiegspfade nutzen denselben Unterbau. Dadurch steigt die Zahl der Use Cases, ohne dass jede neue Lösung eigene Infrastruktur für Parsing, Wissen und Modellzugriff aufbauen muss.
 
 ---
 
-## Designentscheidungen
+## Observability und Betrieb
 
-### Externe Systeme sprechen nur mit dem Core
+FoodLab soll mittelfristig produktionsreif observierbar werden.
 
-Das reduziert Kopplung und schützt die interne Architektur vor ständigen Vertragsänderungen.
+### Zielbestandteile
 
-### LLM-Runtime bleibt austauschbar
+- `/health` pro Dienst
+- Readiness-Probes
+- zentrales Logging
+- Metriken
+- Tracing
+- Audit-Trail
+- Backup-Logs
+- Betriebs-Dashboards
 
-Der Produktkern darf nicht von einem einzelnen Modellserver abhängen.
+Diese Fähigkeiten sind kein Nebenthema, sondern Teil der Produktreife.
 
-### Regelvorprüfung bleibt wichtig
+---
 
-LLMs ergänzen die Fachlogik, ersetzen sie aber nicht. Vorvalidierung und Normalisierung bleiben Pflicht.
+## Verhältnis zu aufsetzenden Systemen
 
-### JSON ist Produktvertrag, nicht Modell-Laune
+### Power Automate
 
-Das Ziel ist kein „möglichst gutes“ JSON aus dem Modell, sondern eine API, die serverseitig ein belastbares Ergebnis garantiert.
+Power Automate ist ein wichtiger, aber nicht exklusiver Consumer. Es nutzt die Core-API, nicht die internen Modell- oder Retrieval-Dienste direkt.
+
+### Ticketsystem
+
+Das Ticketsystem ist ein Use Case auf Basis derselben Plattform. Es bringt Fachprozess, UX, Pflichtfelder, Nachverfolgung und Dokumentation mit, ersetzt aber nicht FoodLab als gemeinsame Verarbeitungsbasis.
+
+### Frontend / Chat / Agent
+
+Das Frontend ist ein weiterer Consumer derselben Plattform und bleibt ausdrücklich möglich.
 
 ---
 
@@ -458,16 +783,22 @@ Das Ziel ist kein „möglichst gutes“ JSON aus dem Modell, sondern eine API, 
 ├── docs/
 │   ├── ARCHITEKTUR.md
 │   ├── POWER-AUTOMATE-INTEGRATION.md
-│   └── ROADMAP.md
+│   ├── ROADMAP.md
+│   └── USE-CASES.md
 ├── compose/
 │   ├── docker-compose.svc.yml
 │   └── docker-compose.ai.yml
 ├── services/
 │   ├── foodlab-api/
 │   ├── foodlab-worker/
+│   ├── parser-service/
+│   ├── ocr-service/
+│   ├── mail-ingest-service/
+│   ├── embedding-service/
+│   ├── rag-service/
 │   ├── llm-router/
 │   ├── audio-api/
-│   └── ...
+│   └── frontend/
 └── scripts/
     ├── setup-stack-v3-apps.sh
     └── foodlab_install.sh
@@ -475,7 +806,63 @@ Das Ziel ist kein „möglichst gutes“ JSON aus dem Modell, sondern eine API, 
 
 ---
 
+## Prioritäten für die nächste Konsolidierungsstufe
+
+### 1. Core härten
+
+- Ergebnis-Envelope versionieren
+- Pydantic-/JSON-Schema-Validierung erzwingen
+- Fehlercodes standardisieren
+- Healthchecks und Readiness vervollständigen
+- Upload-Limits, Timeouts und Logging härten
+
+### 2. Runtime konsequent entkoppeln
+
+- Worker ausschließlich über `llm-router`
+- Providerwahl und Fallbacks zentral
+- svc/gpu-Zielarchitektur als Standard
+
+### 3. Ingestion- und Dokumentdomäne ausbauen
+
+- spezialisierte Parser für `eml` / `msg`
+- HTML-/Plaintext-Trennung
+- Header-Extraktion
+- XLSX- und domänenspezifische Parser
+- Dokumentklassifikation
+- task- und dokumentspezifische Schemas
+
+### 4. Shared Knowledge sauber operationalisieren
+
+- Embedding-Service als Standard
+- zentrale Chunk-/Metadatenregeln
+- Primärsysteme vs. Retrieval-System klar trennen
+- Indizierung aus mehreren Quellen sauber definieren
+
+### 5. Betrieb produktionsreif machen
+
+- Queue
+- horizontale Worker-Skalierung
+- Audit-Trail
+- Observability
+- Backup- und Restore-Prozeduren
+- Rollen- und Sicherheitsmodell
+
+---
+
 ## Statusbewertung
 
-FoodLab ist nicht mehr nur Infrastruktur, sondern bereits als Referenzkern erkennbar. Der nächste Reifegrad besteht darin, die vorhandene Core-Logik sauber in die svc/gpu-Zielarchitektur zu überführen, die LLM-Anbindung auf `llm-router` zu standardisieren und das Ergebnisformat als versioniertes API-Schema zu härten.
+FoodLab ist nicht nur Infrastruktur und nicht nur ein einzelner Fachprozess. Es ist als gemeinsame Plattformbasis für mehrere Eingangskanäle und Use Cases erkennbar.
 
+Der nächste Reifegrad besteht darin,
+
+- die Mehrkanal-Architektur explizit durchzuziehen,
+- die gemeinsamen Shared Services verbindlich zu machen,
+- den Core-Vertrag zu härten,
+- die zentrale Wissenshaltung auszubauen
+- und den Betrieb auf Sicherheit, Wartbarkeit und Skalierung zu standardisieren.
+
+---
+
+## Zielarchitektur in einem Satz
+
+FoodLab ist eine joborientierte Core-Plattform für strukturierte Dokument-, Text-, Wissens- und AI-Verarbeitung, die mehrere Einstiegskanäle auf einer gemeinsamen sicheren und wartbaren Basis zusammenführt und ihre internen AI- und Retrieval-Dienste flexibel austauschbar betreibt.
