@@ -1,0 +1,78 @@
+services:
+  llm-router:
+    build:
+      context: ../services/llm-router
+    container_name: llm-router
+    restart: unless-stopped
+    environment:
+      GPU_BACKEND: ${GPU_BACKEND:-auto}
+      VLLM_URL: http://vllm:8000
+      OLLAMA_URL: http://ollama:11434
+      DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-auto}
+      VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:7b-instruct}
+    ports:
+      - "${LLM_ROUTER_PORT:-8091}:8091"
+    networks: [foodlab-ai, foodlab-svc-bridge]
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    restart: unless-stopped
+    profiles: ["nvidia"]
+    command: ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      HF_HOME: ${HF_HOME:-/srv/ai-gpu/cache/huggingface}
+    volumes:
+      - ${HF_HOME:-/srv/ai-gpu/cache/huggingface}:${HF_HOME:-/srv/ai-gpu/cache/huggingface}
+    ports:
+      - "${VLLM_PORT:-8000}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks: [foodlab-ai]
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    profiles: ["amd", "cpu", "nvidia"]
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+    volumes:
+      - /srv/ai-gpu/models/ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add: [video, render]
+    networks: [foodlab-ai]
+
+  audio-api:
+    build:
+      context: ../services/audio-api
+    container_name: audio-api
+    restart: unless-stopped
+    environment:
+      AUDIO_MODEL: ${AUDIO_MODEL:-small}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_AUDIO_COLLECTION: ${QDRANT_AUDIO_COLLECTION:-audio_speakers}
+      AUDIO_DIR: /srv/ai-gpu/audio
+    volumes:
+      - /srv/ai-gpu/audio:/srv/ai-gpu/audio
+      - ${HF_HOME:-/srv/ai-gpu/cache/huggingface}:${HF_HOME:-/root/.cache/huggingface}
+    ports:
+      - "${AUDIO_API_PORT:-6080}:6080"
+    networks: [foodlab-ai, foodlab-svc-bridge]
+
+networks:
+  foodlab-ai:
+    name: foodlab-ai
+  foodlab-svc-bridge:
+    external: true
+    name: foodlab-svc-bridge

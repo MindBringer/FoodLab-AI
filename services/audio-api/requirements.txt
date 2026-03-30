@@ -1,0 +1,9 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+requests==2.32.3
+qdrant-client==1.13.3
+numpy==2.2.4
+soundfile==0.13.1
+librosa==0.11.0
+faster-whisper==1.1.1
