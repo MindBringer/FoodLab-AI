@@ -1,1 +1,1 @@
-# FaadLab-AI
+# FoodLab-AI
