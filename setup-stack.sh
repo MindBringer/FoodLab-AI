@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ! groups "$USER" | grep -q docker; then
+  sudo usermod -aG docker "$USER"
+  exec newgrp docker <<EOF
+  echo "Docker group activated"
+  docker info
+  bash "$0" "$@"
+EOF
+  exit 0
+fi
+
 ROLE=${1:-""}
 
 if [[ "$ROLE" != "svc" && "$ROLE" != "gpu" ]]; then
