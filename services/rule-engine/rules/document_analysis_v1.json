@@ -1,0 +1,19 @@
+{
+"rule_set": "document_analysis_v1",
+"rules": [
+{
+"rule_id": "lead_max",
+"field": "findings[].value",
+"max": 0.1,
+"severity": "warning",
+"message": "Grenzwert überschritten"
+},
+{
+"rule_id": "contract_keyword",
+"field": "document_type",
+"equals": "contract",
+"severity": "info",
+"message": "Vertrag erkannt"
+}
+]
+}
