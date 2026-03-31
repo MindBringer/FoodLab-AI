@@ -1,0 +1,29 @@
+{
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"$id": "tasks/document_analysis/1.0.0",
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"document_type": { "type": "string" },
+"sample_type": { "type": ["string", "null"] },
+"product_name": { "type": ["string", "null"] },
+"findings": {
+"type": "array",
+"items": {
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+	"parameter": { "type": "string" },
+	"value": { "type": ["number", "null"] },
+	"unit": { "type": ["string", "null"] }
+	},
+	"required": ["parameter"]
+}
+},
+"warnings": {
+"type": "array",
+"items": { "type": "string" }
+}
+},
+"required": ["document_type", "findings", "warnings"]
+}
