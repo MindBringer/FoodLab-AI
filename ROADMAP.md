@@ -199,10 +199,17 @@ Zentrale Wissensbasis
 * embedding-service einführen
 * Chunking standardisieren
 * Qdrant strukturieren
+* SharePoint-Ingestion (Priorität)
+* Nextcloud-Connector (optional)
+* Fileserver-Watch-Folder
+* Metadatenmodell für externe Dokumente
+* Versionserkennung / Änderungslogik
 
 ### Definition of Done
 
 * Retrieval ist reproduzierbar
+* Dokumente aus externen Quellen werden stabil indiziert
+* Änderungen werden erkannt und aktualisiert
 
 ---
 
