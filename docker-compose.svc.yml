@@ -105,7 +105,7 @@ services:
       SCHEMA_BASE_DIR: /app/schemas
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      - ../services/schema-registry/schemas:/app/schemas:ro
+      - ./services/schema-registry/schemas:/app/schemas:ro
     ports:
       - "${SCHEMA_REGISTRY_PORT:-8095}:8095"
     healthcheck:
@@ -126,7 +126,7 @@ services:
       RULE_BASE_DIR: /app/rules
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      - ../services/rule-engine/rules:/app/rules:ro
+      - ./services/rule-engine/rules:/app/rules:ro
     ports:
       - "${RULE_ENGINE_PORT:-8096}:8096"
     healthcheck:
