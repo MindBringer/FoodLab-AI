@@ -378,6 +378,79 @@ Aufsetzende Systeme, die FoodLab nutzen, aber nicht der Plattformkern selbst sin
 
 Diese Trennung verhindert, dass jeder neue Anwendungsfall eigene Parsing-, LLM- oder RAG-Infrastruktur mitbringt.
 
+## Use Case: Dokumentenmanagement + RAG
+
+FoodLab kann als intelligente Wissens- und Suchschicht über bestehenden Dokumentensystemen eingesetzt werden.
+
+### Zielbild
+
+- Dokumente bleiben in:
+  - SharePoint
+  - Nextcloud
+  - Fileservern
+
+- FoodLab ergänzt:
+  - semantische Suche (RAG)
+  - Dokumentklassifikation
+  - automatisches Tagging
+  - Similar Documents
+  - inhaltsbasierte Q&A
+
+---
+
+### Architekturprinzip
+
+FoodLab ist kein Dokumentenmanagementsystem.
+
+Es erweitert bestehende Systeme um:
+
+- semantische Indizierung
+- KI-gestützte Analyse
+- zentrale Wissensbasis
+
+Der Retrieval-Index ist ein sekundärer Arbeitsindex, kein führendes System.
+
+---
+
+### Typische Funktionen
+
+- Suche nach Inhalt statt Dateiname
+- Fragen über Dokumentbestände
+- automatische Klassifikation (z. B. Vertrag, Rechnung, Richtlinie)
+- Extraktion von Daten (z. B. Fristen, Beträge, Parteien)
+- Similar Documents / ähnliche Fälle
+
+---
+
+### Typischer Ablauf
+
+1. Dokument liegt in SharePoint / Nextcloud
+2. Ingestion-Service erkennt Änderung
+3. Dokument wird geparst (Tika / OCR)
+4. Text wird in Chunks zerlegt
+5. Embeddings werden erzeugt
+6. Speicherung in Qdrant
+7. Optional:
+   - Klassifikation
+   - Tagging
+   - Extraktion
+
+---
+
+### Abfrage
+
+- API (Core)
+- Frontend / Chat
+- Power Automate
+- Ticketsystem
+
+---
+
+### Beispiel
+
+"Zeige alle Dokumente mit Kündigungsfrist > 3 Monate"
+
+→ Retrieval + strukturierte Extraktion + Filter
 ---
 
 ## FoodLab-Kern
@@ -503,6 +576,18 @@ RAG ist keine Insellösung eines einzelnen Features, sondern eine zentrale Platt
 - Ticketsystem
 - Automationen
 - analytische oder dokumentbezogene Assistenzfunktionen
+
+### Erweiterung: Dokumentquellen
+
+Der Wissensbestand kann aus externen Dokumentensystemen gespeist werden.
+
+Typische Integration:
+
+- SharePoint-Synchronisation
+- Nextcloud-Connector
+- Fileserver-Watch-Folder
+
+Diese Quellen werden nicht ersetzt, sondern ergänzt.
 
 ### Grundregel
 
