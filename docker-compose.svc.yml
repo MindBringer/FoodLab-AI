@@ -56,7 +56,7 @@ services:
 
   parser-service:
     build:
-      context: ../services/parser-service
+      context: ./services/parser-service
     container_name: parser-service
     restart: unless-stopped
     environment:
@@ -76,7 +76,7 @@ services:
 
   embedding-service:
     build:
-      context: ../services/embedding-service
+      context: ./services/embedding-service
     container_name: embedding-service
     restart: unless-stopped
     environment:
@@ -98,7 +98,7 @@ services:
 
   schema-registry:
     build:
-      context: ../services/schema-registry
+      context: ./services/schema-registry
     container_name: schema-registry
     restart: unless-stopped
     environment:
@@ -119,7 +119,7 @@ services:
 
   rule-engine:
     build:
-      context: ../services/rule-engine
+      context: ./services/rule-engine
     container_name: rule-engine
     restart: unless-stopped
     environment:
@@ -140,7 +140,7 @@ services:
 
   rag-service:
     build:
-      context: ../services/rag-service
+      context: ./services/rag-service
     container_name: rag-service
     restart: unless-stopped
     environment:
@@ -167,7 +167,7 @@ services:
 
   core-api:
     build:
-      context: ../services/core-api
+      context: ./services/core-api
     container_name: core-api
     restart: unless-stopped
     environment:
@@ -206,7 +206,7 @@ services:
 
   worker:
     build:
-      context: ../services/worker
+      context: ./services/worker
     container_name: worker
     restart: unless-stopped
     environment:
