@@ -206,6 +206,58 @@ Zentrale Wissensbasis
 
 ---
 
+# Phase 5b – Document Intelligence
+
+## Ziel
+
+FoodLab als semantische Wissensschicht über Dokumentbeständen etablieren.
+
+---
+
+## Sprint 9.1 – Klassifikation & Tagging
+
+### Aufgaben
+
+- Dokumenttyp-Klassifikation (LLM + Regeln)
+- Tagging-System definieren
+- JSON-Schema für Dokumentmetadaten
+- Validierung der Ergebnisse
+
+### Definition of Done
+
+- Dokumente sind strukturiert klassifiziert
+- Tags sind reproduzierbar
+
+---
+
+## Sprint 9.2 – Retrieval UX
+
+### Aufgaben
+
+- Similar Documents
+- Treffer mit Quellenangabe (Zitate / Chunk)
+- Filter nach Metadaten
+
+### Definition of Done
+
+- Retrieval liefert nachvollziehbare Ergebnisse
+
+---
+
+## Sprint 9.3 – Security & Zugriff
+
+### Aufgaben
+
+- ACL-Konzept vorbereiten
+- Bereichsfilter (z. B. Abteilung)
+- keine unberechtigten Treffer
+
+### Definition of Done
+
+- Suchergebnisse entsprechen Zugriffskontext
+
+---
+
 # Phase 6 – Security & Betrieb
 
 ## Sprint 10 – Security
