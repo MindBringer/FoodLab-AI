@@ -28,11 +28,12 @@ if [ "$ROLE" = "svc" ]; then
     "$BASE_DIR/services/" \
     "$SVC_DIR/services/"
 
-  cp "$BASE_DIR/docker-compose.svc.yml" "$SVC_DIR/"
+  cp "$BASE_DIR/docker-compose.svc.yml" "$SVC_DIR/docker-compose.yml"
   cp "$BASE_DIR/.env" "$SVC_DIR/"
 
   cd "$SVC_DIR"
 
+  docker compose config
   docker compose down || true
   docker compose up -d --build
 
@@ -52,11 +53,12 @@ elif [ "$ROLE" = "gpu" ]; then
     "$BASE_DIR/services/audio-api" \
     "$GPU_DIR/services/"
 
-  cp "$BASE_DIR/docker-compose.ai.yml" "$GPU_DIR/"
+  cp "$BASE_DIR/docker-compose.ai.yml" "$GPU_DIR/docker-compose.yml"
   cp "$BASE_DIR/.env" "$GPU_DIR/"
 
   cd "$GPU_DIR"
 
+  docker compose config
   docker compose down || true
   docker compose up -d --build
 
