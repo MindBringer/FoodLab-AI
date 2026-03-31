@@ -8,8 +8,9 @@ Prioritäten:
 
 1. Power Automate Integration
 2. Ticketsystem (Power App)
-3. n8n (für Tests / Orchestrierung)
-4. Frontend / Chat / Agenten (niedrigste Priorität)
+3. Dokumentquellen + Knowledge Layer
+4. n8n (für Tests / Orchestrierung)
+5. Frontend / Chat / Agenten (niedrigste Priorität)
 
 ---
 
@@ -24,6 +25,8 @@ Klare Trennung zwischen Plattform, internen Services und Use Cases.
 * FoodLab Core als stabile Plattform definiert
 * Externe vs. interne APIs festgelegt
 * Einstiegskanäle priorisiert
+* DMS-Abgrenzung festgeschrieben
+* Queue, Schema-Verträge und Regelvalidierung als Kernbestandteile verankert
 
 ---
 
@@ -39,14 +42,16 @@ Stabile, versionierte API als Basis für alle Integrationen.
 
 * JSON-Response-Envelope definieren
 * Schema-Version einführen
-* Pydantic-/Schema-Validierung
+* Pydantic-/Schema-Validierung integrieren
 * Fehlerstruktur standardisieren
 * OpenAPI bereinigen
+* technische vs. fachliche Metadaten sauber trennen
 
 ### Definition of Done
 
 * Alle Endpunkte liefern konsistentes JSON
 * Fehler sind maschinenlesbar
+* Response-Modelle sind dokumentiert und validiert
 
 ---
 
@@ -54,18 +59,22 @@ Stabile, versionierte API als Basis für alle Integrationen.
 
 ### Ziel
 
-Zentraler Zugriff auf LLMs über llm-router
+Zentraler Zugriff auf LLMs über `llm-router`
 
 ### Aufgaben
 
-* Worker → llm-router umstellen
+* Worker vollständig auf `llm-router` umstellen
 * direkte Modellzugriffe entfernen
 * Retry/Timeout implementieren
 * Modellkonfiguration externalisieren
+* Provider-Fallbacks definieren
+* Logging der Modellaufrufe standardisieren
 
 ### Definition of Done
 
-* Modelle austauschbar ohne Codeänderung
+* Modelle sind ohne Codeänderung austauschbar
+* Providerwahl erfolgt zentral
+* Worker kennt keine konkreten Modellserver mehr
 
 ---
 
@@ -73,67 +82,147 @@ Zentraler Zugriff auf LLMs über llm-router
 
 ### Ziel
 
-Reproduzierbare Dokumentverarbeitung
+Reproduzierbare Dokumentverarbeitung als belastbare Ingestion-Basis.
 
 ### Aufgaben
 
 * Parser kapseln
-* Dateitypen erweitern (PDF, DOCX, XLSX)
+* Dateitypen erweitern (`pdf`, `docx`, `xlsx`, `eml`, `msg`)
+* OCR-Pfad verbindlich definieren
 * Metadatenmodell einführen
-* Regelengine modularisieren
+* HTML-/Plaintext-Trennung für Mail-Inhalte umsetzen
+* Header- und Attachment-Verarbeitung definieren
+* Watch-Folder als technisches Ingestion-Muster implementieren
 
 ### Definition of Done
 
 * Gleiche Inputs liefern gleiche Ergebnisse
+* Mail- und Dateiverarbeitung ist reproduzierbar
+* Dokumente liegen im normalisierten Zwischenformat vor
+
+---
+
+## Sprint 4 – Queue & Worker-Orchestrierung
+
+### Ziel
+
+Skalierbare, entkoppelte und fehlertolerante Verarbeitung über Queueing.
+
+### Aufgaben
+
+* `redis` als Standard-Queue integrieren
+* Worker auf Queue-Consumer umbauen
+* Retry-Mechanismen implementieren
+* Leasing / Visibility Timeout definieren
+* Fehlerfälle und Dead-Letter-Strategie vorbereiten
+* Betriebsparameter für Queue und Worker externalisieren
+
+### Definition of Done
+
+* Jobs laufen nicht mehr direkt request-gekoppelt
+* Worker können horizontal skaliert werden
+* Fehlerhafte Jobs blockieren den Normalbetrieb nicht
+
+---
+
+## Sprint 5 – Schema Registry
+
+### Ziel
+
+Stabile, versionierte Datenverträge für strukturierte Ergebnisse.
+
+### Aufgaben
+
+* `schema-registry` als Service oder Modul definieren
+* JSON-Schemas für Kern-Use-Cases modellieren
+* Versionierungskonzept einführen
+* Schema-Validierung in Worker bzw. Aggregation integrieren
+* Fehlerbehandlung bei Schema-Verletzungen festlegen
+
+### Definition of Done
+
+* Ergebnisse werden gegen definierte Schemas validiert
+* Schema-Versionen sind nachvollziehbar
+* Use Cases können auf stabile Datenverträge bauen
+
+---
+
+## Sprint 6 – Rule Engine
+
+### Ziel
+
+Fachlogik und Validierung von LLM-Logik trennen.
+
+### Aufgaben
+
+* `rule-engine` definieren
+* Regeldefinitionen in JSON / YAML festlegen
+* Grenzwert-, Plausibilitäts- und Compliance-Prüfungen integrieren
+* Worker-Anbindung umsetzen
+* Ergebnisstruktur für Warnungen, Verstöße und Hinweise vereinheitlichen
+
+### Definition of Done
+
+* Regeln werden reproduzierbar angewendet
+* Fachliche Validierung ist nicht mehr implizit im Worker versteckt
+* LLM-Ergebnisse können regelbasiert abgesichert werden
 
 ---
 
 # Phase 2 – Power Automate Integration (Priorität A)
 
-## Sprint 4 – Power Automate MVP
+## Sprint 7 – Power Automate MVP
 
 ### Ziel
 
-Erster produktiver Einstiegskanal
+Erster produktiver Einstiegskanal mit stabilem Connector-Vertrag.
 
 ### Aufgaben
 
 * API-Endpunkte finalisieren
-* OpenAPI für Connector optimieren
+* OpenAPI für Custom Connector optimieren
 * Beispiel-Flows erstellen
 * Fehlerhandling definieren
+* Sync- vs. Async-Nutzung für Flows festlegen
+* Referenz-Responses dokumentieren
 
 ### Definition of Done
 
 * End-to-End Flow funktioniert stabil
+* Flows können strukturierte FoodLab-Ergebnisse direkt weiterverarbeiten
+* Connector-Vertrag ist wiederholbar einsetzbar
 
 ---
 
 # Phase 3 – Ticketsystem (Power App)
 
-## Sprint 5 – Datenmodell & Integration
+## Sprint 8 – Datenmodell & Integration
 
 ### Ziel
 
-Ticketsystem nutzt FoodLab als Backend
+Ticketsystem nutzt FoodLab als Analyse-Backend ohne Architekturbruch.
 
 ### Aufgaben
 
 * SharePoint-Struktur definieren
 * Ticketklassifikation integrieren
-* FoodLab nur bei technischen Fällen nutzen
+* FoodLab nur bei technischen Fällen bzw. klar definierten Szenarien nutzen
+* technische Ergebnisrückgabe im Ticketkontext abbilden
+* Übergabe von Kontextfeldern an FoodLab definieren
 
 ### Definition of Done
 
 * Ticket kann FoodLab-Ergebnis referenzieren
+* Ticketprozess bleibt führend im Fachsystem
+* Analyse ist sauber vom UI und Workflow getrennt
 
 ---
 
-## Sprint 6 – Power App MVP
+## Sprint 9 – Power App MVP
 
 ### Ziel
 
-Erste nutzbare Oberfläche
+Erste nutzbare Oberfläche für den priorisierten Supportprozess.
 
 ### Aufgaben
 
@@ -141,69 +230,106 @@ Erste nutzbare Oberfläche
 * Validierung
 * Flow-Anbindung
 * Ergebnisanzeige
+* Similar-Cases-Vorbereitung
+* Fehler- und Statusrückmeldungen in der Oberfläche
 
 ### Definition of Done
 
 * Tickets können vollständig bearbeitet werden
+* Ergebnisanzeige ist strukturiert nutzbar
+* Nutzer müssen keine technischen Details der Plattform kennen
 
 ---
 
-## Sprint 7 – Wissensaufbau
+## Sprint 10 – Wissensaufbau aus Tickets
 
 ### Ziel
 
-Tickets erzeugen strukturierte Wissensbasis
+Tickets erzeugen eine nutzbare und strukturierte Wissensbasis.
 
 ### Aufgaben
 
 * Dokumentation speichern
 * Similar Cases implementieren
-* RAG-Anbindung vorbereiten
+* Übergabe in RAG vorbereiten
+* Ticket-Ergebnis und Wissensobjekt sauber trennen
+* Klassifikation und Tags aus Ticketfällen ableiten
 
 ### Definition of Done
 
 * Wissensbasis wächst automatisch
+* ähnliche Fälle sind auffindbar
+* Ticketsystem und Wissenslayer bleiben logisch getrennt
 
 ---
 
-# Phase 4 – n8n (optional früh, wenn sinnvoll)
+# Phase 4 – Dokumentquellen & Knowledge Layer
 
-## Sprint 8 – n8n Integration
+## Ziel
+
+FoodLab als semantische Wissensschicht über externen Dokumentquellen etablieren, ohne führende DMS- oder Dateisysteme zu ersetzen.
+
+---
+
+## Sprint 11 – SharePoint-Ingestion
 
 ### Ziel
 
-Schnelle Tests und Orchestrierung
+SharePoint als primäre Dokumentquelle stabil anbinden.
 
 ### Aufgaben
 
-* Referenz-Workflows
-* Webhooks
-* Debug-Flows
+* SharePoint-Connector definieren
+* Änderungs- und Reingestion-Logik festlegen
+* Dokumentreferenzmodell einführen
+* Metadaten aus SharePoint normalisieren
+* Berechtigungsrelevante Kontextfelder übernehmen
+* Lösch- bzw. Deindexierungslogik vorbereiten
 
 ### Definition of Done
 
-* n8n kann FoodLab vollständig nutzen
+* SharePoint-Dokumente werden stabil referenziert und indiziert
+* Änderungen werden erkannt
+* Primärsystem und sekundärer Index sind sauber getrennt
 
 ---
 
-# Phase 5 – RAG & Wissen
-
-## Sprint 9 – RAG produktiv
+## Sprint 12 – Nextcloud- und Fileserver-Ingestion
 
 ### Ziel
 
-Zentrale Wissensbasis
+Weitere Dokumentquellen standardisiert anbinden.
 
 ### Aufgaben
 
-* embedding-service einführen
+* Nextcloud-Connector definieren
+* Fileserver-Watch-Folder produktiv nutzbar machen
+* Normalisierung unterschiedlicher Metadatenmodelle
+* Reingestion bei Dateiänderung
+* Fehlerfälle bei Netzwerk- oder Pfadproblemen abfangen
+
+### Definition of Done
+
+* Nextcloud- und Fileserver-Quellen werden kontrolliert ingestiert
+* Metadatenmodell bleibt konsistent
+* Quellsysteme bleiben fachlich führend
+
+---
+
+## Sprint 13 – RAG produktiv
+
+### Ziel
+
+Zentrale Wissensbasis mit reproduzierbarem Retrieval.
+
+### Aufgaben
+
+* `embedding-service` verbindlich einführen
 * Chunking standardisieren
-* Qdrant strukturieren
-* SharePoint-Ingestion (Priorität)
-* Nextcloud-Connector (optional)
-* Fileserver-Watch-Folder
-* Metadatenmodell für externe Dokumente
-* Versionserkennung / Änderungslogik
+* Qdrant-Struktur und Collections definieren
+* Metadatenmodell für externe Dokumente finalisieren
+* Versionserkennung / Änderungslogik abschließen
+* Reindexing-Strategie festlegen
 
 ### Definition of Done
 
@@ -213,178 +339,270 @@ Zentrale Wissensbasis
 
 ---
 
-# Phase 5b – Document Intelligence
-
-## Ziel
-
-FoodLab als semantische Wissensschicht über Dokumentbeständen etablieren.
-
----
-
-## Sprint 9.1 – Klassifikation & Tagging
-
-### Aufgaben
-
-- Dokumenttyp-Klassifikation (LLM + Regeln)
-- Tagging-System definieren
-- JSON-Schema für Dokumentmetadaten
-- Validierung der Ergebnisse
-
-### Definition of Done
-
-- Dokumente sind strukturiert klassifiziert
-- Tags sind reproduzierbar
-
----
-
-## Sprint 9.2 – Retrieval UX
-
-### Aufgaben
-
-- Similar Documents
-- Treffer mit Quellenangabe (Zitate / Chunk)
-- Filter nach Metadaten
-
-### Definition of Done
-
-- Retrieval liefert nachvollziehbare Ergebnisse
-
----
-
-## Sprint 9.3 – Security & Zugriff
-
-### Aufgaben
-
-- ACL-Konzept vorbereiten
-- Bereichsfilter (z. B. Abteilung)
-- keine unberechtigten Treffer
-
-### Definition of Done
-
-- Suchergebnisse entsprechen Zugriffskontext
-
----
-
-# Phase 6 – Security & Betrieb
-
-## Sprint 10 – Security
+## Sprint 14 – Klassifikation & Tagging
 
 ### Ziel
 
-System absichern
+Dokumentquellen semantisch anreichern und systematisch nutzbar machen.
+
+### Aufgaben
+
+* Dokumenttyp-Klassifikation (LLM + Regeln)
+* Tagging-System definieren
+* JSON-Schema für Dokumentmetadaten
+* Validierung der Ergebnisse
+* Similar Documents vorbereiten
+* Klassifikations- und Tagging-Qualität messbar machen
+
+### Definition of Done
+
+* Dokumente sind strukturiert klassifiziert
+* Tags sind reproduzierbar
+* Klassifikation ist als eigener Plattformbaustein nutzbar
+
+---
+
+## Sprint 15 – Retrieval UX & API
+
+### Ziel
+
+Retrieval als belastbare Funktion für API, Frontend und Workflows bereitstellen.
+
+### Aufgaben
+
+* Similar Documents
+* Treffer mit Quellenangabe (Zitat / Chunk / Referenz)
+* Filter nach Metadaten
+* Query-API stabilisieren
+* Antwortformate für dokumentbezogene Fragen definieren
+
+### Definition of Done
+
+* Retrieval liefert nachvollziehbare Ergebnisse
+* Quellenbezug ist sichtbar
+* Dokumentabfragen sind für mehrere Consumer wiederverwendbar
+
+---
+
+## Sprint 16 – Security & Zugriffskontext im Retrieval
+
+### Ziel
+
+Der Wissenslayer muss den Zugriffskontext respektieren.
+
+### Aufgaben
+
+* ACL-Konzept vorbereiten
+* Bereichsfilter, z. B. Abteilung oder Quelle
+* keine unberechtigten Treffer
+* Sicherheitslabel im Metadatenmodell verankern
+* Zugriffskontext in Query-Verarbeitung berücksichtigen
+
+### Definition of Done
+
+* Suchergebnisse entsprechen Zugriffskontext
+* sensitive Dokumente werden nicht unzulässig sichtbar
+* Retrieval ist nicht nur funktional, sondern kontrolliert nutzbar
+
+---
+
+# Phase 5 – n8n und technische Orchestrierung
+
+## Sprint 17 – n8n Integration
+
+### Ziel
+
+Schnelle Tests, technische Orchestrierung und Referenz-Workflows.
+
+### Aufgaben
+
+* Referenz-Workflows
+* Webhooks
+* Debug-Flows
+* Dokumentquellen-Workflows testbar machen
+* API- und Retrieval-Funktionen über n8n nutzbar machen
+
+### Definition of Done
+
+* n8n kann FoodLab vollständig nutzen
+* technische Orchestrierungen sind reproduzierbar
+* n8n ist Hilfsschicht, nicht Produktkern
+
+---
+
+# Phase 6 – Security, Compliance und Betrieb
+
+## Sprint 18 – Security
+
+### Ziel
+
+System absichern und externe Exposition kontrollieren.
 
 ### Aufgaben
 
 * Reverse Proxy
 * interne Dienste abschotten
 * Secrets sichern
+* TLS-Zielbild vorbereiten
+* Rollen- und Token-Modell konkretisieren
 
 ### Definition of Done
 
 * Nur definierte APIs sind extern erreichbar
+* interne Dienste sind nicht direkt exponiert
+* Sicherheitsgrenzen sind dokumentiert
 
 ---
 
-## Sprint 11 – Observability
+## Sprint 19 – Observability
 
 ### Ziel
 
-System betreibbar machen
+System betreibbar und nachvollziehbar machen.
 
 ### Aufgaben
 
 * Logging
 * Metrics
 * Healthchecks
+* Readiness-Probes
+* Audit-Trail vorbereiten
+* Betriebs-Dashboards definieren
 
 ### Definition of Done
 
 * Fehler sind nachvollziehbar
+* Dienste sind beobachtbar
+* betriebsrelevante Zustände sind messbar
 
 ---
 
-## Sprint 12 – Skalierung
+## Sprint 20 – Skalierung
 
 ### Ziel
 
-Lastfähigkeit
+Lastfähigkeit und horizontale Erweiterbarkeit.
 
 ### Aufgaben
 
-* Queue einführen
+* Queue finalisieren
 * Worker skalieren
+* Lastverhalten dokumentieren
+* Engpässe zwischen svc- und gpu-Knoten identifizieren
+* RAG- und Runtime-Skalierung getrennt betrachten
 
 ### Definition of Done
 
 * System ist horizontal skalierbar
+* Queue und Worker verhalten sich unter Last stabil
+* Skalierungsgrenzen sind bekannt
 
 ---
 
-## Sprint 13 – Backup & Restore
+## Sprint 21 – Backup & Restore
 
 ### Ziel
 
-Produktionsreife
+Wiederherstellbarkeit und Betriebsreife.
 
 ### Aufgaben
 
 * Backups implementieren
 * Restore testen
 * Deployment standardisieren
+* DB-Dumps und Qdrant-Snapshots dokumentieren
+* Wiederaufbau aus Primärquellen für Dokumentquellen definieren
 
 ### Definition of Done
 
 * Wiederherstellung funktioniert sicher
+* Plattformdaten sind konsistent sicherbar
+* Rebuild des Wissensbestands ist nachvollziehbar beschrieben
 
 ---
 
-# Phase 7 – Frontend / Chat (niedrige Priorität)
-
-## Sprint 14 – Test-Frontend
+## Sprint 22 – Compliance
 
 ### Ziel
 
-Debug- und Test-UI
+Technische Plattform auf rechtliche und regulatorische Anforderungen vorbereiten.
+
+### Aufgaben
+
+* DSGVO-Maßnahmen konkretisieren
+* Löschkonzepte definieren
+* Audit Logging ausbauen
+* Zugriffskontrolle dokumentieren
+* Trennung von Test- und Produktionsdaten verbindlich machen
+* NIS2-nahe Resilienz- und Betriebsaspekte dokumentieren
+* Umgang mit KI-bedingten Risiken und Grenzen dokumentieren
+
+### Definition of Done
+
+* Compliance-relevante Maßnahmen sind dokumentiert und technisch verankert
+* Plattform unterstützt datenschutz- und betriebssicheren Einsatz
+* KI-Ergebnisse sind nachvollziehbar und nicht als autonome Fachentscheidung missverständlich
+
+---
+
+# Phase 7 – Frontend / Chat / Agenten
+
+## Sprint 23 – Test-Frontend
+
+### Ziel
+
+Debug- und Test-UI für Plattformfunktionen.
 
 ### Aufgaben
 
 * Health
 * Job-Submit
 * RAG-Abfrage
+* Dokumentabfragen mit Quellenbezug
+* Anzeige strukturierter Ergebnisse
 
 ### Definition of Done
 
 * Plattform kann visuell getestet werden
+* API- und Retrieval-Funktionen sind über UI prüfbar
+* Frontend bleibt technischer Consumer, nicht fachlicher Primärprozess
 
 ---
 
-## Sprint 15 – Chat / Agenten
+## Sprint 24 – Chat / Agenten
 
 ### Ziel
 
-Erweiterte Nutzung
+Erweiterte Nutzung auf Basis desselben Core und Wissenslayers.
 
 ### Aufgaben
 
 * Chat-Endpunkt
 * Retrieval-Integration
 * Agentenlogik
+* Quellenbezug in Antworten
+* Begrenzung auf kontrollierte, nachvollziehbare Toolnutzung
 
 ### Definition of Done
 
 * Chat nutzt denselben Core wie alle anderen Systeme
+* Antworten können Retrieval-Kontext einbeziehen
+* agentische Funktionen verletzen nicht die Plattformgrenzen
 
 ---
 
 # Produktionsreife erreicht wenn:
 
 * JSON-Vertrag stabil
+* Queue und Worker entkoppelt produktiv laufen
 * Power Automate produktiv
 * Ticketsystem produktiv
 * Wissensbasis aktiv genutzt
+* Dokumentquellen stabil angebunden sind
 * Security umgesetzt
 * Monitoring vorhanden
 * Backup getestet
+* Compliance-Maßnahmen dokumentiert und technisch gestützt sind
 
 ---
 
@@ -392,6 +610,6 @@ Erweiterte Nutzung
 
 Die Umsetzung erfolgt strikt entlang der Abhängigkeiten:
 
-Core → Integration → Use Case → Betrieb
+Core → Verträge / Queue / Validierung → Integration → Dokumentquellen / Wissen → Use Case → Betrieb
 
 Frontend und Chat werden bewusst zuletzt umgesetzt, außer sie dienen als Testwerkzeug.
