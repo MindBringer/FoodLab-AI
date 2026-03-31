@@ -9,7 +9,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
     volumes:
       - ${POSTGRES_DATA_DIR:-/srv/foodlab/postgres}:/var/lib/postgresql/data
-    networks: [foodlab-svc]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-foodlab} -d ${POSTGRES_DB:-foodlab} || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - foodlab-svc
 
   redis:
     image: redis:7
@@ -18,7 +25,14 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - ${REDIS_DATA_DIR:-/srv/foodlab/redis}:/data
-    networks: [foodlab-svc]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - foodlab-svc
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -28,6 +42,12 @@ services:
       - ${QDRANT_DATA_DIR:-/srv/foodlab/qdrant}:/qdrant/storage
     ports:
       - "${QDRANT_PORT:-6333}:6333"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:6333/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       foodlab-svc:
       foodlab-svc-bridge:
@@ -45,7 +65,14 @@ services:
       - ${DATA_DIR:-/srv/foodlab/data}:${DATA_DIR:-/srv/foodlab/data}
     ports:
       - "${PARSER_PORT:-8092}:8092"
-    networks: [foodlab-svc]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8092/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - foodlab-svc
 
   embedding-service:
     build:
@@ -54,12 +81,62 @@ services:
     restart: unless-stopped
     environment:
       EMBED_PROVIDER: ${EMBED_PROVIDER:-ollama}
-      OLLAMA_URL: http://ollama:11434
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
       EMBED_FALLBACK_DIM: ${EMBED_FALLBACK_DIM:-384}
     ports:
       - "${EMBED_PORT:-8094}:8094"
-    networks: [foodlab-svc, foodlab-svc-bridge]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8094/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - foodlab-svc
+      - foodlab-svc-bridge
+
+  schema-registry:
+    build:
+      context: ../services/schema-registry
+    container_name: schema-registry
+    restart: unless-stopped
+    environment:
+      SCHEMA_BASE_DIR: /app/schemas
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ../services/schema-registry/schemas:/app/schemas:ro
+    ports:
+      - "${SCHEMA_REGISTRY_PORT:-8095}:8095"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8095/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - foodlab-svc
+
+  rule-engine:
+    build:
+      context: ../services/rule-engine
+    container_name: rule-engine
+    restart: unless-stopped
+    environment:
+      RULE_BASE_DIR: /app/rules
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ../services/rule-engine/rules:/app/rules:ro
+    ports:
+      - "${RULE_ENGINE_PORT:-8096}:8096"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8096/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - foodlab-svc
 
   rag-service:
     build:
@@ -67,14 +144,26 @@ services:
     container_name: rag-service
     restart: unless-stopped
     environment:
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-docs_chunks}
-      EMBEDDING_URL: http://embedding-service:8094
-      LLM_ROUTER_URL: http://llm-router:8091
+      EMBEDDING_URL: ${EMBEDDING_URL:-http://embedding-service:8094}
+      LLM_ROUTER_URL: ${LLM_ROUTER_URL:-http://llm-router:8091}
     ports:
       - "${RAG_PORT:-8082}:8082"
-    depends_on: [qdrant, embedding-service]
-    networks: [foodlab-svc, foodlab-svc-bridge]
+    depends_on:
+      qdrant:
+        condition: service_started
+      embedding-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - foodlab-svc
+      - foodlab-svc-bridge
 
   core-api:
     build:
@@ -84,14 +173,36 @@ services:
     environment:
       API_KEY: ${API_KEY}
       API_AUTH_ENABLED: ${API_AUTH_ENABLED:-1}
+      HOST_PUBLIC_URL: ${HOST_PUBLIC_URL:-https://ai.intern}
       POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://foodlab:change-me@postgres:5432/foodlab}
       DATA_DIR: ${DATA_DIR:-/srv/foodlab/data}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-http://schema-registry:8095}
+      RULE_ENGINE_URL: ${RULE_ENGINE_URL:-http://rule-engine:8096}
+      JOB_QUEUE_NAME: ${JOB_QUEUE_NAME:-foodlab:jobs}
+      JOB_DLQ_NAME: ${JOB_DLQ_NAME:-foodlab:jobs:dlq}
+      JOB_RETRY_LIMIT: ${JOB_RETRY_LIMIT:-3}
     volumes:
       - ${DATA_DIR:-/srv/foodlab/data}:${DATA_DIR:-/srv/foodlab/data}
     ports:
       - "${CORE_API_PORT:-8088}:8088"
-    depends_on: [postgres]
-    networks: [foodlab-svc]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
+      rule-engine:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8088/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - foodlab-svc
 
   worker:
     build:
@@ -100,12 +211,34 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://foodlab:change-me@postgres:5432/foodlab}
-      PARSER_URL: http://parser-service:8092
-      RAG_URL: http://rag-service:8082
+      PARSER_URL: ${PARSER_URL:-http://parser-service:8092}
+      RAG_URL: ${RAG_URL:-http://rag-service:8082}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-http://schema-registry:8095}
+      RULE_ENGINE_URL: ${RULE_ENGINE_URL:-http://rule-engine:8096}
+      LLM_ROUTER_URL: ${LLM_ROUTER_URL:-http://llm-router:8091}
+      JOB_QUEUE_NAME: ${JOB_QUEUE_NAME:-foodlab:jobs}
+      JOB_DLQ_NAME: ${JOB_DLQ_NAME:-foodlab:jobs:dlq}
+      JOB_RETRY_LIMIT: ${JOB_RETRY_LIMIT:-3}
+      DATA_DIR: ${DATA_DIR:-/srv/foodlab/data}
     volumes:
       - ${DATA_DIR:-/srv/foodlab/data}:${DATA_DIR:-/srv/foodlab/data}
-    depends_on: [core-api, parser-service, rag-service]
-    networks: [foodlab-svc]
+    depends_on:
+      core-api:
+        condition: service_started
+      parser-service:
+        condition: service_started
+      rag-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
+      rule-engine:
+        condition: service_started
+    networks:
+      - foodlab-svc
+      - foodlab-svc-bridge
 
   n8n:
     image: n8nio/n8n:latest
@@ -125,7 +258,14 @@ services:
       - ${N8N_FLOWS_DIR:-/srv/foodlab/n8n/flows}:/flows
     ports:
       - "${N8N_PORT:-5678}:5678"
-    networks: [foodlab-svc]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - foodlab-svc
 
 networks:
   foodlab-svc:
