@@ -72,11 +72,13 @@ elif [ "$ROLE" = "gpu" ]; then
   cp "$BASE_DIR/docker-compose.ai.yml" "$GPU_DIR/docker-compose.yml"
   cp "$BASE_DIR/.env" "$GPU_DIR/"
 
+  GPU_PROFILE="${GPU_BACKEND:-nvidia}"
+
   cd "$GPU_DIR"
 
-  docker compose config
-  docker compose down || true
-  docker compose up -d --build
+  docker compose --profile "$GPU_PROFILE" config
+  docker compose --profile "$GPU_PROFILE" down || true
+  docker compose --profile "$GPU_PROFILE" up -d --build
 
   echo "GPU node started."
 fi
