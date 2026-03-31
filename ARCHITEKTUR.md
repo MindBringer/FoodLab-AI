@@ -221,6 +221,75 @@ Dienste:
 - `rag-service`
 - `qdrant`
 
+### 5.1 Document Intelligence Layer (DMS Integration)
+
+Verantwortung:
+
+- Integration externer Dokumentquellen (SharePoint, Nextcloud, Fileserver)
+- Synchronisation und Ingestion von Dokumenten
+- Normalisierung von Dokument- und Metadaten
+- Übergabe an Parsing-, Embedding- und RAG-Schicht
+- KI-gestützte Klassifikation und Tagging
+- Verknüpfung zwischen Primärsystem und Retrieval-Index
+
+Grundprinzip:
+
+FoodLab ist kein führendes Dokumentenmanagementsystem.  
+Primärsysteme bleiben verantwortlich für:
+
+- Ablage
+- Versionierung
+- Berechtigungen
+- Revision / Audit
+
+FoodLab erzeugt einen sekundären, semantischen Arbeits- und Suchindex.
+
+---
+
+### Datenfluss
+
+Primärsystem → Ingestion → Parsing → Chunking → Embedding → Qdrant → Retrieval
+
+---
+
+### Unterstützte Quellen
+
+- SharePoint (bevorzugt)
+- Nextcloud (WebDAV / API)
+- Fileserver (Watch-Folder / Batch)
+- E-Mail / Exporte (optional)
+
+---
+
+### Metadatenmodell (Mindeststandard)
+
+- source_system (sharepoint / nextcloud / filer)
+- source_id
+- source_path / source_url
+- document_name
+- version
+- last_modified
+- checksum
+- classification (AI)
+- tags (AI)
+- sensitivity (optional)
+- department / context
+
+---
+
+### Trennung von Verantwortung
+
+Primärsystem:
+- Wahrheit der Daten
+- Berechtigungen
+- Lebenszyklus
+
+FoodLab:
+- Analyse
+- Suche
+- Wissensaufbau
+- Klassifikation
+
 ### 6. AI Runtime Layer
 
 Verantwortung:
@@ -293,3 +362,21 @@ Power Automate / Ticketsystem / Frontend / Webhooks / Watch-Folder / weitere Cli
                                            v                                                    v
                                          vLLM                                                 Ollama
                                        (NVIDIA)                                       (CPU/AMD/Fallback)
+
+Ergänzung DMS:
+SharePoint / Nextcloud / Fileserver
+                |
+                v
+        Ingestion / Sync Layer
+                |
+                v
+          Parsing / OCR
+                |
+                v
+      Chunking / Embedding
+                |
+                v
+            Qdrant (RAG)
+                |
+                v
+      Retrieval / Tagging / LLM
