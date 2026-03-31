@@ -97,6 +97,42 @@ Auch diese Pfade sollen dieselben Parsing-, Normalisierungs- und Wissensdienste 
 
 ---
 
+## Dokumentquellen, DMS und Knowledge Layer
+
+FoodLab ist kein Dokumentenmanagementsystem und kein führendes Ablagesystem.
+
+Führende Primärsysteme bleiben je nach Einsatzfall insbesondere:
+
+- SharePoint
+- Nextcloud
+- Fileserver
+- E-Mail-Systeme
+- weitere Fachsysteme mit dokumentbezogenen Anhängen oder Exporten
+
+Diese Systeme bleiben verantwortlich für:
+
+- Ablage
+- Versionierung
+- Berechtigungen
+- Lebenszyklus
+- Revision / Audit
+- Lösch- und Aufbewahrungsregeln
+
+FoodLab ergänzt diese Systeme um:
+
+- Parsing und OCR
+- strukturierte Extraktion
+- Dokumentklassifikation
+- Tagging
+- semantische Indizierung
+- Similar Documents
+- kontextbasierte Q&A
+- workflowfähige, strukturierte Ergebnisse
+
+Der Retrieval-Bestand in Qdrant ist damit bewusst ein sekundärer Such-, Analyse- und Arbeitsindex, kein führendes Dokumentensystem.
+
+---
+
 ## Architekturprinzipien
 
 ### 1. Shared Platform statt Einzellösungen
@@ -126,6 +162,14 @@ Das Ergebnisformat ist serverseitig kontrolliert, validiert und versioniert. Ma�
 ### 7. Zentrale Wissensbasis
 
 Retrieval und semantische Suche sind keine Einzelfunktion eines Use Cases, sondern eine gemeinsame Plattformfähigkeit. Mehrere Systeme können auf denselben Wissensbestand aufsetzen.
+
+### 8. Primärsysteme bleiben führend
+
+FoodLab verwaltet nicht die fachliche Wahrheit der Dokumente. Es erzeugt aus Primärquellen einen verarbeitbaren, durchsuchbaren und KI-nutzbaren Wissensbestand.
+
+### 9. Verträge und Validierung vor Komfort
+
+Schemas, Versionierung, Regelvalidierung und kontrollierte Fehlerantworten sind Teil des Produktkerns und keine spätere Kosmetik.
 
 ---
 
@@ -177,13 +221,15 @@ Verantwortung:
 - Ergebnisaggregation
 - fachliche und technische Normalisierung
 - Übergang zwischen Eingabekanälen und internen Diensten
+- Queue-basierte Entkopplung zwischen API und Verarbeitung
+- Retry, Leasing und Fehlerbehandlung
 
 Dienste:
 
 - `foodlab-worker`
 - `postgres`
 - Dateispeicher
-- optional Queue
+- `redis` als Standard-Queue
 
 ### 4. Ingestion / Extraction Layer
 
@@ -194,6 +240,8 @@ Verantwortung:
 - OCR bei gescannten Dokumenten
 - E-Mail- und Attachment-Verarbeitung
 - domänenspezifische Vorverarbeitung
+- Import aus externen Dokumentquellen
+- Änderungs- und Reingestion-Logik
 
 Dienste:
 
@@ -201,6 +249,9 @@ Dienste:
 - `tika`
 - `ocr-service`
 - `mail-ingest-service`
+- SharePoint-Connector
+- Nextcloud-Connector
+- Fileserver-Watch-Folder
 - Regex- und Regelmodule
 
 ### 5. Knowledge / Retrieval Layer
@@ -214,6 +265,9 @@ Verantwortung:
 - semantische Suche
 - zitierfähige Retrieval-Ergebnisse
 - zentrale Wissenshaltung für mehrere Consumer
+- Similar Documents
+- Metadaten- und Filterabfragen
+- referenzierte Antworten mit Quellenbezug
 
 Dienste:
 
@@ -221,7 +275,46 @@ Dienste:
 - `rag-service`
 - `qdrant`
 
-### 6. AI Runtime Layer
+### 6. Document Intelligence Layer
+
+Verantwortung:
+
+- Integration externer Dokumentquellen in den Wissensbestand
+- Dokumentklassifikation
+- Tagging
+- strukturierte Dokumentmetadaten
+- Verknüpfung zwischen Primärsystem, Index und Fachprozess
+- Vorbereitung dokumentbasierter Abfragen und Extraktionen
+
+Typische Fähigkeiten:
+
+- Klassifikation nach Dokumenttyp
+- Erkennung fachlicher Kategorien
+- Tagging per Regeln und LLM
+- Extraktion relevanter Metadaten
+- Aktualisierung bei Dokumentänderungen
+- Reindizierung und Löschsynchronisation
+
+Hinweis:
+
+Dieser Layer erweitert bestehende DMS- oder Dateisysteme, ersetzt sie aber nicht.
+
+### 7. Validation / Contract Layer
+
+Verantwortung:
+
+- zentrale Verwaltung versionierter JSON-Schemas
+- Ergebnisvalidierung
+- task- und dokumentspezifische Vertragsdefinition
+- fachliche Regelvalidierung
+- Grenzwert- und Plausibilitätsprüfungen
+
+Dienste:
+
+- `schema-registry`
+- `rule-engine`
+
+### 8. AI Runtime Layer
 
 Verantwortung:
 
@@ -236,7 +329,7 @@ Dienste:
 - `vllm`
 - `ollama`
 
-### 7. Audio Layer
+### 9. Audio Layer
 
 Verantwortung:
 
@@ -250,7 +343,7 @@ Dienste:
 - `audio-api`
 - optional separater Diarization-Service
 
-### 8. Workflow / Operations Layer
+### 10. Workflow / Operations Layer
 
 Verantwortung:
 
@@ -258,12 +351,14 @@ Verantwortung:
 - technische und operative Workflows
 - internes UI / BFF
 - Monitoring-nahe Hilfsfunktionen
+- Compliance-nahe Nachverfolgbarkeit
 
 Dienste:
 
 - `n8n`
 - `frontend`
 - optional Reverse Proxy / Nginx
+- Audit-Logging / zentrale Logsammlung perspektivisch
 
 ---
 
@@ -278,21 +373,20 @@ Power Automate / Ticketsystem / Frontend / Webhooks / Watch-Folder / weitere Cli
                      +---------------+----------------+
                      |                                |
                      v                                v
-                Postgres / Queue                 foodlab-worker
+                         Postgres / Redis Queue   foodlab-worker
                                                          |
-                +--------------------+-------------------+-------------------+
-                |                    |                   |                   |
-                v                    v                   v                   v
-          Parsing / OCR        Regex / Fachlogik   Knowledge / RAG      LLM-Aufruf
-                |                                      |                   |
-                v                                      v                   v
-        parser / tika / OCR                  embedding / qdrant      llm-router
-                                                                            |
-                                           +--------------------------------+-------------------+
-                                           |                                                    |
-                                           v                                                    v
-                                         vLLM                                                 Ollama
-                                       (NVIDIA)                                       (CPU/AMD/Fallback)
+          +-------------------+--------------------+--------------------+-------------------+
+          |                   |                    |                    |                   |
+          v                   v                    v                    v                   v
+   Ingestion / Sync      Parsing / OCR      Rule Engine /         Knowledge / RAG      LLM-Aufruf
+   SharePoint /          parser / tika      Schema Validation     embedding / qdrant   llm-router
+   Nextcloud / Filer     / OCR              rule-engine /         / rag-service               |
+                                             schema-registry                                 |
+                                                                                  +----------+-----------+
+                                                                                  |                      |
+                                                                                  v                      v
+                                                                                vLLM                   Ollama
+                                                                              (NVIDIA)        (CPU / AMD / Fallback)
 ```
 
 ---
@@ -308,14 +402,19 @@ Typische Dienste:
 - `foodlab-api`
 - `foodlab-worker`
 - `postgres`
-- `redis` optional bzw. perspektivisch Standard für Queueing
+- `redis`
 - `parser-service`
 - `tika`
 - `ocr-service`
 - `mail-ingest-service`
+- SharePoint-Connector
+- Nextcloud-Connector
+- Fileserver-Watch-Folder
 - `embedding-service`
 - `rag-service`
 - `qdrant`
+- `schema-registry`
+- `rule-engine`
 - `n8n`
 - `frontend`
 - `nginx`
@@ -347,8 +446,9 @@ Alles, was für den stabilen Produktkern zwingend erforderlich ist:
 - `foodlab-api`
 - `foodlab-worker`
 - `postgres`
+- `redis`
 - Dateispeicher
-- definierte interne Anbindung an Parsing- und LLM-Schicht
+- definierte interne Anbindung an Parsing-, Vertrags- und LLM-Schicht
 
 ### Shared Internal Services
 
@@ -357,10 +457,12 @@ Gemeinsame Fähigkeiten, die von mehreren Use Cases genutzt werden:
 - Parsing
 - OCR
 - Mail-Ingest
+- DMS-/Dokumentenquellen-Ingestion
 - Embeddings
 - RAG / Qdrant
+- Rule Engine
+- Schema Registry
 - Audio
-- Queue
 - n8n
 - Frontend / BFF
 - Reverse Proxy
@@ -374,9 +476,12 @@ Aufsetzende Systeme, die FoodLab nutzen, aber nicht der Plattformkern selbst sin
 - Ticketsystem
 - direkte Chat-/Agenten-Oberfläche
 - interne Recherche- oder Wissensoberflächen
+- dokumentenbasierte Such- und Auskunftsfunktionen
 - weitere Fachprozesse
 
-Diese Trennung verhindert, dass jeder neue Anwendungsfall eigene Parsing-, LLM- oder RAG-Infrastruktur mitbringt.
+Diese Trennung verhindert, dass jeder neue Anwendungsfall eigene Parsing-, LLM-, Vertrags- oder RAG-Infrastruktur mitbringt.
+
+---
 
 ## Use Case: Dokumentenmanagement + RAG
 
@@ -395,8 +500,8 @@ FoodLab kann als intelligente Wissens- und Suchschicht über bestehenden Dokumen
   - automatisches Tagging
   - Similar Documents
   - inhaltsbasierte Q&A
-
----
+  - strukturierte Extraktion
+  - referenzierte Antworten mit Quellen
 
 ### Architekturprinzip
 
@@ -407,50 +512,50 @@ Es erweitert bestehende Systeme um:
 - semantische Indizierung
 - KI-gestützte Analyse
 - zentrale Wissensbasis
+- workflowfähige Dokumentintelligenz
 
 Der Retrieval-Index ist ein sekundärer Arbeitsindex, kein führendes System.
-
----
 
 ### Typische Funktionen
 
 - Suche nach Inhalt statt Dateiname
 - Fragen über Dokumentbestände
-- automatische Klassifikation (z. B. Vertrag, Rechnung, Richtlinie)
-- Extraktion von Daten (z. B. Fristen, Beträge, Parteien)
+- automatische Klassifikation, z. B. Vertrag, Rechnung, Richtlinie oder Support-Dokument
+- Extraktion von Daten, z. B. Fristen, Beträge, Ansprechpartner oder Gültigkeiten
 - Similar Documents / ähnliche Fälle
-
----
+- RAG-gestützte Assistenz mit Quellenbezug
+- Filterung nach Metadaten, Abteilung, Dokumenttyp oder Sicherheitskontext
 
 ### Typischer Ablauf
 
-1. Dokument liegt in SharePoint / Nextcloud
-2. Ingestion-Service erkennt Änderung
-3. Dokument wird geparst (Tika / OCR)
-4. Text wird in Chunks zerlegt
-5. Embeddings werden erzeugt
-6. Speicherung in Qdrant
-7. Optional:
+1. Dokument liegt in SharePoint / Nextcloud / Fileserver
+2. Ingestion-Service erkennt Änderung oder neuen Eingang
+3. Dokument wird referenziert und nicht zum führenden Primärdatensatz umdefiniert
+4. Dokument wird geparst (Tika / OCR)
+5. Text und Metadaten werden normalisiert
+6. Text wird in Chunks zerlegt
+7. Embeddings werden erzeugt
+8. Speicherung in Qdrant
+9. Optional:
    - Klassifikation
    - Tagging
-   - Extraktion
-
----
+   - strukturierte Extraktion
+   - Similarity-Berechnung
 
 ### Abfrage
 
-- API (Core)
+- Core API
 - Frontend / Chat
 - Power Automate
 - Ticketsystem
-
----
+- n8n / Automationen
 
 ### Beispiel
 
-"Zeige alle Dokumente mit Kündigungsfrist > 3 Monate"
+„Zeige alle Dokumente mit Kündigungsfrist größer als drei Monate und ähnlichen Klauseln wie im Referenzvertrag.“
 
-→ Retrieval + strukturierte Extraktion + Filter
+→ Retrieval + strukturierte Extraktion + Metadatenfilter + Similarity
+
 ---
 
 ## FoodLab-Kern
@@ -466,6 +571,7 @@ Der FoodLab-Kern ist eine joborientierte Eingangs- und Verarbeitungsplattform f�
 - fachliche Vorverarbeitung per Regeln / Regex
 - Prompt-Aufbau und Modellorchestrierung
 - Nutzung von Retrieval, wenn fachlich sinnvoll
+- Schema- und Regelvalidierung
 - Normalisierung und Aggregation der Ergebnisse
 - Bereitstellung stabiler JSON-Ergebnisse
 - Nachvollziehbarkeit über Jobstatus, Resultate und Fehler
@@ -490,7 +596,7 @@ Die Core-API ist die offizielle Integrationsfläche für externe Systeme und auf
 ### Leitprinzipien
 
 - keine direkte Anbindung externer Systeme an Modellserver
-- keine direkte Exponierung von Qdrant, Embedding, Parsing oder Audio
+- keine direkte Exponierung von Qdrant, Embedding, Parsing, Rule Engine oder Audio
 - Authentifizierung über API-Key, später ausbaubar auf feinere Token-/Rollenmodelle
 - JSON-first
 - OpenAPI als stabiler Vertragsbestandteil
@@ -504,6 +610,15 @@ Die Core-API ist die offizielle Integrationsfläche für externe Systeme und auf
 - `GET /api/v1/jobs/{job_id}`
 - `GET /api/v1/jobs/{job_id}/result`
 
+### Perspektivische offizielle Erweiterungen
+
+- `POST /api/v1/documents/index`
+- `POST /api/v1/retrieval/query`
+- `POST /api/v1/validate`
+- `GET /api/v1/schemas/{schema_name}/{version}`
+
+Diese Erweiterungen sind nur dann offizielle API, wenn sie vertraglich stabilisiert und dokumentiert sind. Bis dahin bleiben sie interne Serviceverträge.
+
 ### Interne Dienste
 
 Beispiele für interne Endpunkte bzw. interne Serviceverträge:
@@ -511,8 +626,11 @@ Beispiele für interne Endpunkte bzw. interne Serviceverträge:
 - Parsing
 - OCR
 - Mail-Ingest
+- Dokumentquellen-Synchronisation
 - Embeddings
 - RAG Index / Query
+- Schema-Validierung
+- Rule-Validierung
 - interne LLM-Calls
 - Audio-Funktionen
 
@@ -532,6 +650,7 @@ Geeignet für:
 - kleine Dokumente
 - einfache Klassifikation oder Extraktion
 - direkte Frontend- oder Flow-Schritte mit kurzer Laufzeit
+- Validierung gegen vorhandene Schemas oder Regeln
 
 ### Asynchron
 
@@ -545,6 +664,7 @@ Geeignet für:
 - Retrieval- oder Agentenketten
 - komplexere Analysen
 - Batch- oder Workflow-Verarbeitung
+- Dokumentquellen-Synchronisationen
 
 ---
 
@@ -566,6 +686,8 @@ RAG ist keine Insellösung eines einzelnen Features, sondern eine zentrale Platt
 - verarbeitete Dokumente
 - SharePoint-basierte Wissensbestände
 - Support-Dokumentation
+- Nextcloud-Dokumente
+- Fileserver-Bestände
 - hochgeladene Referenzdokumente
 - strukturierte oder halbstrukturierte Fachunterlagen
 
@@ -575,6 +697,7 @@ RAG ist keine Insellösung eines einzelnen Features, sondern eine zentrale Platt
 - interne Recherche
 - Ticketsystem
 - Automationen
+- dokumentzentrierte Auskunfts- und Suchfunktionen
 - analytische oder dokumentbezogene Assistenzfunktionen
 
 ### Erweiterung: Dokumentquellen
@@ -586,6 +709,7 @@ Typische Integration:
 - SharePoint-Synchronisation
 - Nextcloud-Connector
 - Fileserver-Watch-Folder
+- Mail-Ingest für dokumentlastige Postfächer
 
 Diese Quellen werden nicht ersetzt, sondern ergänzt.
 
@@ -647,6 +771,12 @@ Frontend -> BFF / Core / RAG -> LLM Router -> Antwort mit optionalem Retrieval-K
 Dokumentquelle / Upload / Sync -> Parsing -> Chunking -> Embedding -> Qdrant
 ```
 
+### 5. Dokumentintelligenz über bestehende DMS-Systeme
+
+```text
+SharePoint / Nextcloud / Fileserver -> Ingestion / Sync -> Parsing / OCR -> Klassifikation / Tagging -> RAG / Retrieval -> API / Chat / Workflow
+```
+
 Diese Abläufe nutzen dieselbe Plattformbasis, unterscheiden sich aber im Einstiegspunkt und in der Prozesslogik.
 
 ---
@@ -658,7 +788,8 @@ Diese Abläufe nutzen dieselbe Plattformbasis, unterscheiden sich aber im Einsti
 - Text
 - Datei-Uploads
 - E-Mail
-- SharePoint-Exporte
+- SharePoint-Exporte oder APIs
+- Nextcloud-Quellen
 - Webhooks
 - Watch-Folder
 - Audio
@@ -679,6 +810,8 @@ Enthalten sein sollen unter anderem:
 - Metadaten
 - Sicherheitslabel
 - Referenzen auf Primärsysteme
+- Version / Änderungsstand
+- Indexierungsstatus
 
 ### Dateitypen
 
@@ -711,6 +844,8 @@ Der Zielzustand ist ein serverseitig validiertes, versioniertes und stabil nutzb
 - strukturierte Fehlerliste
 - konsistente Felder über mehrere Einstiegskanäle hinweg
 - Erweiterbarkeit ohne Vertragsbruch
+- task- und dokumentspezifische Fachschemas
+- serverseitig erzwungene Validierung
 
 ### Beispiel
 
@@ -765,6 +900,7 @@ FoodLab ist auf hohe Sicherheit bei lokaler oder hybrider Betriebsform ausgelegt
 - sichere Secret-Verwaltung
 - restriktive Standard-Exposition
 - Hardening der internen Servicekommunikation
+- Zugriffskontext für dokumentbezogenes Retrieval
 
 ### Sicherheitsgrundsatz
 
@@ -780,6 +916,7 @@ FoodLab soll einfach zu sichern, reproduzierbar wiederherzustellen und mit gerin
 
 - VM- oder Host-Snapshots vor größeren Änderungen
 - applikationskonsistente Sicherung von Postgres
+- Redis-Konfiguration und Queue-relevante Betriebsparameter
 - Qdrant-Snapshots
 - Sicherung von Rohdateien, OCR-Ergebnissen, extrahiertem Text, Chunks und Resultaten
 - Sicherung von Konfiguration, Compose-Dateien und OpenAPI-Artefakten
@@ -803,6 +940,60 @@ FoodLab soll einfach zu sichern, reproduzierbar wiederherzustellen und mit gerin
 - möglichst geringe Zahl konkurrierender Betriebsmodi
 - klare Upgrade- und Migrationspfade
 
+### Grundsatz zur Wiederherstellung
+
+Primärdokumente bleiben in führenden Quellsystemen. FoodLab muss daher seine eigenen Verarbeitungs-, Metadaten- und Indexbestände konsistent sichern und bei Bedarf reproduzierbar aus Primärsystemen neu aufbauen können.
+
+---
+
+## Compliance-Bewertung
+
+FoodLab ist primär eine technische Plattform. Die konkrete rechtliche Bewertung hängt vom Einsatzkontext, den Datenkategorien und der Betreiberrolle ab. Für die technische Architektur sind folgende Aspekte maßgeblich.
+
+### DSGVO
+
+Relevante Architekturprinzipien:
+
+- Datenminimierung durch Trennung von Primärsystem und sekundärem Wissensindex
+- kontrollierte Speicherung von extrahiertem Text, Metadaten und Ergebnissen
+- definierte Lösch- und Reingestion-Strategien
+- Auditierbarkeit von Verarbeitungsschritten
+- Zugriffsschutz auf API, interne Dienste und Retrieval-Bestand
+- Trennung von Test-, Entwicklungs- und Produktionsdaten
+
+Typische Anforderungen im Betrieb:
+
+- Verzeichnis der Verarbeitungstätigkeiten
+- Rollen- und Berechtigungskonzept
+- Löschkonzept für Jobs, Resultate, Chunks und Caches
+- Auftragsverarbeitungs- oder interne Verantwortungszuordnung
+- Prüfbarkeit, welche Daten in den Index gelangt sind
+
+### NIS2 / betriebliche Resilienz
+
+Soweit FoodLab in regulierten oder kritischen Umfeldern betrieben wird, unterstützt die Zielarchitektur insbesondere:
+
+- Netzsegmentierung
+- definierte externe Eintrittspunkte
+- Logging und Monitoring
+- Backup- und Restore-Fähigkeit
+- Betriebsdokumentation
+- Härtung interner Servicekommunikation
+- Wiederherstellbarkeit und Incident-Handling
+
+### Produkthaftung / KI-gestützte Entscheidungen
+
+FoodLab liefert strukturierte Entscheidungsgrundlagen, keine autonomen Entscheidungen.
+
+Daraus folgen als technische Leitplanken:
+
+- nachvollziehbare Datenherkunft
+- strukturierte Ergebnisse statt freier Freitextantworten
+- Regelvalidierung zusätzlich zu LLM-Ausgaben
+- Kennzeichnung von Unsicherheiten und Grenzen
+- Möglichkeit zur Quellenangabe und Explainability
+- fachliche Endentscheidung bleibt beim aufsetzenden System oder Nutzer
+
 ---
 
 ## Skalierung
@@ -821,7 +1012,7 @@ FoodLab ist technisch auf horizontale und funktionale Skalierung ausgelegt.
 
 ### Warum das trägt
 
-Mehrere Einstiegspfade nutzen denselben Unterbau. Dadurch steigt die Zahl der Use Cases, ohne dass jede neue Lösung eigene Infrastruktur für Parsing, Wissen und Modellzugriff aufbauen muss.
+Mehrere Einstiegspfade nutzen denselben Unterbau. Dadurch steigt die Zahl der Use Cases, ohne dass jede neue Lösung eigene Infrastruktur für Parsing, Wissen, Vertragsvalidierung und Modellzugriff aufbauen muss.
 
 ---
 
@@ -858,6 +1049,10 @@ Das Ticketsystem ist ein Use Case auf Basis derselben Plattform. Es bringt Fachp
 
 Das Frontend ist ein weiterer Consumer derselben Plattform und bleibt ausdrücklich möglich.
 
+### DMS / Dokumentquellen
+
+SharePoint, Nextcloud und Fileserver bleiben führende Dokumentquellen. FoodLab nutzt sie als Primärquellen für Analyse, Klassifikation, Extraktion und Wissensaufbau.
+
 ---
 
 ## Repository-Struktur (Sollbild)
@@ -879,8 +1074,12 @@ Das Frontend ist ein weiterer Consumer derselben Plattform und bleibt ausdrückl
 │   ├── parser-service/
 │   ├── ocr-service/
 │   ├── mail-ingest-service/
+│   ├── sharepoint-connector/
+│   ├── nextcloud-connector/
 │   ├── embedding-service/
 │   ├── rag-service/
+│   ├── schema-registry/
+│   ├── rule-engine/
 │   ├── llm-router/
 │   ├── audio-api/
 │   └── frontend/
@@ -915,6 +1114,7 @@ Das Frontend ist ein weiterer Consumer derselben Plattform und bleibt ausdrückl
 - XLSX- und domänenspezifische Parser
 - Dokumentklassifikation
 - task- und dokumentspezifische Schemas
+- SharePoint / Nextcloud / Fileserver sauber anbinden
 
 ### 4. Shared Knowledge sauber operationalisieren
 
@@ -922,6 +1122,7 @@ Das Frontend ist ein weiterer Consumer derselben Plattform und bleibt ausdrückl
 - zentrale Chunk-/Metadatenregeln
 - Primärsysteme vs. Retrieval-System klar trennen
 - Indizierung aus mehreren Quellen sauber definieren
+- Similar Documents und dokumentbezogene Retrieval-Features vertraglich stabilisieren
 
 ### 5. Betrieb produktionsreif machen
 
@@ -931,6 +1132,7 @@ Das Frontend ist ein weiterer Consumer derselben Plattform und bleibt ausdrückl
 - Observability
 - Backup- und Restore-Prozeduren
 - Rollen- und Sicherheitsmodell
+- Compliance-nahe Betriebsdokumentation
 
 ---
 
@@ -943,11 +1145,12 @@ Der nächste Reifegrad besteht darin,
 - die Mehrkanal-Architektur explizit durchzuziehen,
 - die gemeinsamen Shared Services verbindlich zu machen,
 - den Core-Vertrag zu härten,
-- die zentrale Wissenshaltung auszubauen
-- und den Betrieb auf Sicherheit, Wartbarkeit und Skalierung zu standardisieren.
+- die zentrale Wissenshaltung auszubauen,
+- Dokumentquellen systematisch anzubinden
+- und den Betrieb auf Sicherheit, Wartbarkeit, Compliance und Skalierung zu standardisieren.
 
 ---
 
 ## Zielarchitektur in einem Satz
 
-FoodLab ist eine joborientierte Core-Plattform für strukturierte Dokument-, Text-, Wissens- und AI-Verarbeitung, die mehrere Einstiegskanäle auf einer gemeinsamen sicheren und wartbaren Basis zusammenführt und ihre internen AI- und Retrieval-Dienste flexibel austauschbar betreibt.
+FoodLab ist eine joborientierte Core-Plattform für strukturierte Dokument-, Text-, Wissens- und AI-Verarbeitung, die mehrere Einstiegskanäle auf einer gemeinsamen sicheren und wartbaren Basis zusammenführt, führende Dokumentquellen um einen semantischen Knowledge Layer erweitert und ihre internen AI- und Retrieval-Dienste flexibel austauschbar betreibt.
