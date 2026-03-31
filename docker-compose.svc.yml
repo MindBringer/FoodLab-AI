@@ -66,7 +66,7 @@ services:
     ports:
       - "${PARSER_PORT:-8092}:8092"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8092/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -87,7 +87,7 @@ services:
     ports:
       - "${EMBED_PORT:-8094}:8094"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8094/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8094/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -156,7 +156,7 @@ services:
       embedding-service:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -196,7 +196,7 @@ services:
       rule-engine:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8088/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 10
