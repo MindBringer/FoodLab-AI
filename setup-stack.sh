@@ -45,6 +45,12 @@ if [ "$ROLE" = "svc" ]; then
 
   docker compose config
   docker compose down || true
+  
+  sudo mkdir -p /srv/foodlab/n8n/data
+  sudo mkdir -p /srv/foodlab/n8n/files
+  sudo mkdir -p /srv/foodlab/n8n/flows
+  sudo chown -R 1000:1000 /srv/foodlab/n8n
+  
   docker compose up -d --build
 
   echo "Service node started."
