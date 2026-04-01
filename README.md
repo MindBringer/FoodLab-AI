@@ -37,11 +37,63 @@ Das bedeutet:
 
 ---
 
+## Installation (from scratch)
+
+### 1. Repo klonen
+
+cd /opt
+sudo git clone https://github.com/MindBringer/FoodLab-AI.git
+sudo chown -R $USER:$USER /opt/FoodLab-AI
+
+### 2. Base installieren
+
+cd /opt/FoodLab-AI
+sudo bash install-base.sh
+
+Installiert:
+
+- Docker
+- Git
+- Tools
+
+### 3. Bootstrap
+
+cd /opt/FoodLab-AI
+bash bootstrap-foodlab.s
+
+- legt /srv/foodlab bzw. /srv/ai-gpu an
+- erstellt .env
+
+### 4. Stack starten
+
+Service-Node:
+bash setup-stack.sh svc
+
+GPU-Node:
+bash setup-stack.sh gpu
+
+### 5. Konfiguration
+.env:
+LLM_ROUTER_URL=http://<IP GPU-Node>:8091
+QDRANT_URL=http://<IP SVC-Node>:6333
+REDIS_URL=redis://<IP SVC-Node>:6379/0
+
+Wichtig: Cross-Host immer über IP, nicht Service-Name
+
 ## Mehrere Eingangskanäle / Startpfade
 
 FoodLab unterstützt bewusst mehrere gleichwertige Einstiegspfade.
 
 ### 1. Prozesssysteme und Automatisierung
+
+Features:
+
+- strukturierte Extraktion via LLM
+- Hybrid-Logik (Heuristik + LLM)
+- Schema-Validierung
+- parameterbasierte Rule-Engine
+- RAG vorbereitet
+- Queue-basierte Verarbeitung
 
 Beispiele:
 
