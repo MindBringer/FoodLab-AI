@@ -362,6 +362,31 @@ Dienste:
 
 ---
 
+## Architektur
+
+2-Host-Setup:
+
+- **svc (Service Node)**
+  - core-api
+  - worker
+  - parser-service
+  - rule-engine
+  - schema-registry
+  - embedding-service
+  - rag-service
+  - postgres / redis / qdrant / n8n
+
+- **gpu (AI Node)**
+  - llm-router
+  - vllm
+  - optional: audio-api
+
+Kommunikation:
+- svc → gpu über **Host-IP + Port**
+- kein Docker-DNS über Host-Grenzen hinweg
+
+---
+
 ## Gesamtbild
 
 ```text
