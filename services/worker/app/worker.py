@@ -10,12 +10,9 @@ import psycopg
 import redis
 import requests
 
-APP_NAME = "foodlab-worker"
-
 POSTGRES_DSN = os.getenv("POSTGRES_DSN", "postgresql://foodlab:change-me@postgres:5432/foodlab")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 PARSER_URL = os.getenv("PARSER_URL", "http://parser-service:8092")
-RAG_URL = os.getenv("RAG_URL", "http://rag-service:8082")
 SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://schema-registry:8095")
 RULE_ENGINE_URL = os.getenv("RULE_ENGINE_URL", "http://rule-engine:8096")
 LLM_ROUTER_URL = os.getenv("LLM_ROUTER_URL", "http://llm-router:8091")
@@ -40,15 +37,7 @@ def get_redis() -> redis.Redis:
     return redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def update_status(
-    job_id: str,
-    status: str,
-    *,
-    result: dict[str, Any] | None = None,
-    validation: dict[str, Any] | None = None,
-    rules: dict[str, Any] | None = None,
-    error_message: str | None = None,
-) -> None:
+def update_status(job_id: str, status: str, *, result=None, validation=None, rules=None, error_message=None) -> None:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -125,16 +114,11 @@ def parse_input(job: dict[str, Any]) -> dict[str, Any]:
 
 def detect_document_type_hint(text: str) -> str | None:
     t = (text or "").lower()
-
-    contract_markers = ["vertrag", "contract", "kündigungsfrist", "vertragsparteien", "vereinbarung"]
-    invoice_markers = ["rechnung", "invoice", "rechnungsnummer", "mwst", "ust", "netto", "brutto"]
-    lab_markers = ["labor", "analyse", "lab report", "probe", "mg/kg", "µg", "ph-wert", "ph wert"]
-
-    if any(m in t for m in contract_markers):
+    if any(m in t for m in ["vertrag", "contract", "kündigungsfrist", "vertragsparteien", "vereinbarung"]):
         return "contract"
-    if any(m in t for m in invoice_markers):
+    if any(m in t for m in ["rechnung", "invoice", "rechnungsnummer", "mwst", "ust", "netto", "brutto"]):
         return "invoice"
-    if any(m in t for m in lab_markers):
+    if any(m in t for m in ["labor", "analyse", "lab report", "probe", "mg/kg", "µg", "ph-wert", "ph wert"]):
         return "lab_report"
     if "bericht" in t or "report" in t:
         return "report"
@@ -143,10 +127,8 @@ def detect_document_type_hint(text: str) -> str | None:
 
 def heuristic_result(parsed: dict[str, Any]) -> dict[str, Any]:
     text = parsed.get("text") or parsed.get("content") or ""
-    document_type = detect_document_type_hint(text) or "document"
-
     return {
-        "document_type": document_type,
+        "document_type": detect_document_type_hint(text) or "document",
         "sample_type": None,
         "product_name": None,
         "findings": [],
@@ -156,25 +138,19 @@ def heuristic_result(parsed: dict[str, Any]) -> dict[str, Any]:
 
 def trim_text(text: str, max_chars: int) -> str:
     text = (text or "").strip()
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars]
+    return text[:max_chars] if len(text) > max_chars else text
 
 
 def build_prompt(text: str, metadata: dict[str, Any], document_type_hint: str | None) -> str:
     filename = metadata.get("filename")
     content_type = metadata.get("content_type")
     entry_channel = metadata.get("entry_channel")
-
     hint_block = f'Dokumentklassen-Hinweis: "{document_type_hint}"' if document_type_hint else "Dokumentklassen-Hinweis: none"
 
     return f"""
 Du bist ein Extraktionsmodul für FoodLab.
 Antworte AUSSCHLIESSLICH mit gültigem JSON.
 Keine Einleitung. Keine Erklärungen. Keine Markdown-Codeblöcke.
-
-Ziel:
-Extrahiere ein minimales, stabiles Analyseobjekt aus dem Dokumentinhalt.
 
 Gib exakt dieses JSON-Schema zurück:
 {{
@@ -193,25 +169,24 @@ Gib exakt dieses JSON-Schema zurück:
   ]
 }}
 
-Verbindliche Regeln:
-1. Nur die Felder aus dem Schema verwenden.
-2. document_type immer setzen.
-3. Wenn ein starker Dokumentklassen-Hinweis vorhanden ist, übernimm ihn, sofern der Text nicht klar dagegen spricht.
-4. Bei Vertragstexten: document_type="contract", findings=[].
-5. Bei Rechnungstexten: document_type="invoice", findings=[].
-6. Bei Labor-/Analyseberichten: document_type="lab_report" und findings nur mit echten messbaren Parametern füllen.
-7. Bei allgemeinen Berichten: document_type="report".
-8. Wenn nichts klar passt: document_type="document".
+Regeln:
+1. Nur diese Felder verwenden.
+2. Wenn ein starker Dokumentklassen-Hinweis vorhanden ist, übernimm ihn, sofern der Text nicht klar dagegen spricht.
+3. Bei Vertragstexten: document_type="contract", findings=[].
+4. Bei Rechnungstexten: document_type="invoice", findings=[].
+5. Bei Labor-/Analyseberichten: document_type="lab_report".
+6. findings nur mit echten messbaren Parametern füllen.
+7. Produktnamen, Probennamen und Eigennamen niemals übersetzen. Originalsprache beibehalten.
+8. Wenn eine Probe explizit benannt ist, setze sample_type auf diese Bezeichnung.
 9. warnings sparsam verwenden.
 10. Keine generischen Aussagen wie:
    - "Keine relevante Analysefunde ..."
    - "Keine Informationen gefunden"
    - "Keine Analyse möglich"
    - "Mehrere mögliche Produktnamen erkannt"
-11. warnings nur verwenden, wenn wirklich fachlich relevant.
-12. Wenn keine sinnvollen warnings vorliegen: warnings = [].
-13. sample_type und product_name nur setzen, wenn klar im Text erkennbar, sonst null.
-14. value nur als Zahl, nicht als String.
+   - "Text enthält keine messbaren Parameter"
+11. Wenn keine sinnvollen warnings vorliegen: warnings=[].
+12. value nur als Zahl, nicht als String.
 
 Metadaten:
 - filename: {filename}
@@ -226,7 +201,6 @@ Dokumentinhalt:
 
 def extract_json_object(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
-
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
@@ -243,8 +217,7 @@ def extract_json_object(text: str) -> dict[str, Any]:
     start = raw.find("{")
     end = raw.rfind("}")
     if start != -1 and end != -1 and end > start:
-        candidate = raw[start : end + 1]
-        data = json.loads(candidate)
+        data = json.loads(raw[start:end + 1])
         if isinstance(data, dict):
             return data
 
@@ -254,34 +227,28 @@ def extract_json_object(text: str) -> dict[str, Any]:
 def normalize_findings(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
-
-    findings: list[dict[str, Any]] = []
+    findings = []
     for item in value:
         if not isinstance(item, dict):
             continue
-
         parameter = str(item.get("parameter") or "").strip()
         if not parameter:
             continue
-
         raw_value = item.get("value")
-        parsed_value: float | int | None = None
-        if raw_value is not None and raw_value != "":
+        parsed_value = None
+        if raw_value not in (None, ""):
             try:
                 parsed_value = float(raw_value)
                 if parsed_value.is_integer():
                     parsed_value = int(parsed_value)
             except Exception:
                 parsed_value = None
-
         unit = item.get("unit")
-        findings.append(
-            {
-                "parameter": parameter,
-                "value": parsed_value,
-                "unit": str(unit).strip() if unit not in (None, "") else None,
-            }
-        )
+        findings.append({
+            "parameter": parameter,
+            "value": parsed_value,
+            "unit": str(unit).strip() if unit not in (None, "") else None,
+        })
     return findings
 
 
@@ -298,25 +265,24 @@ def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
         r"no relevant analysis",
         r"no findings",
         r"mehrere mögliche produktnamen",
+        r"keine messbaren parameter",
+        r"text enthält keine messbaren parameter",
     ]
 
-    cleaned: list[str] = []
+    cleaned = []
     for w in warnings:
         text = str(w).strip()
         if not text:
             continue
-
         lower = text.lower()
         if any(re.search(pattern, lower) for pattern in blocked_patterns):
             continue
-
-        if document_type == "contract" and ("analyse" in lower or "produkt" in lower):
+        if document_type in {"contract", "invoice"} and ("analyse" in lower or "produkt" in lower or "parameter" in lower):
             continue
-
         cleaned.append(text)
 
-    deduped: list[str] = []
-    seen: set[str] = set()
+    deduped = []
+    seen = set()
     for item in cleaned:
         if item not in seen:
             deduped.append(item)
@@ -326,8 +292,8 @@ def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
 
 def normalize_result(data: dict[str, Any], document_type_hint: str | None) -> dict[str, Any]:
     document_type = str(data.get("document_type") or "document").strip().lower()
-    allowed_types = {"contract", "invoice", "report", "lab_report", "document"}
-    if document_type not in allowed_types:
+    allowed = {"contract", "invoice", "report", "lab_report", "document"}
+    if document_type not in allowed:
         document_type = "document"
 
     if document_type_hint in {"contract", "invoice", "lab_report", "report"}:
@@ -357,11 +323,7 @@ def normalize_result(data: dict[str, Any], document_type_hint: str | None) -> di
 
 
 def call_llm_router(prompt: str) -> dict[str, Any]:
-    resp = session.post(
-        f"{LLM_ROUTER_URL}/chat",
-        json={"prompt": prompt},
-        timeout=WORKER_LLM_TIMEOUT,
-    )
+    resp = session.post(f"{LLM_ROUTER_URL}/chat", json={"prompt": prompt}, timeout=WORKER_LLM_TIMEOUT)
     resp.raise_for_status()
     body = resp.json()
     if not isinstance(body, dict):
@@ -382,10 +344,8 @@ def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
 
     try:
         llm_response = call_llm_router(prompt)
-        llm_text = llm_response.get("text", "")
-        data = extract_json_object(llm_text)
+        data = extract_json_object(llm_response.get("text", ""))
         result = normalize_result(data, document_type_hint)
-
         result["warnings"] = result.get("warnings", []) + [
             f"llm_provider={llm_response.get('provider')}",
             f"llm_model={llm_response.get('model')}",
@@ -404,11 +364,7 @@ def validate_result(job: dict[str, Any], result: dict[str, Any]) -> dict[str, An
         return None
     resp = session.post(
         f"{SCHEMA_REGISTRY_URL}/validate",
-        json={
-            "schema_name": job["schema_name"],
-            "schema_version": job["schema_version"],
-            "payload": result,
-        },
+        json={"schema_name": job["schema_name"], "schema_version": job["schema_version"], "payload": result},
         timeout=30,
     )
     resp.raise_for_status()
@@ -418,11 +374,7 @@ def validate_result(job: dict[str, Any], result: dict[str, Any]) -> dict[str, An
 def evaluate_rules(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
     if not job["rule_set"]:
         return None
-    resp = session.post(
-        f"{RULE_ENGINE_URL}/evaluate",
-        json={"rule_set": job["rule_set"], "payload": result},
-        timeout=30,
-    )
+    resp = session.post(f"{RULE_ENGINE_URL}/evaluate", json={"rule_set": job["rule_set"], "payload": result}, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -445,14 +397,7 @@ def process_job(job_id: str) -> None:
         elif rules and not rules.get("ok", True):
             final_status = "done_with_warnings"
 
-        update_status(
-            job_id,
-            final_status,
-            result=result,
-            validation=validation,
-            rules=rules,
-            error_message=None,
-        )
+        update_status(job_id, final_status, result=result, validation=validation, rules=rules, error_message=None)
     except Exception as exc:
         update_status(job_id, "failed", error_message=str(exc))
         raise
