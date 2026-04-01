@@ -1,22 +1,32 @@
-# worker Startfassung
+# Worker-Umbau auf echten LLM-Pfad
 
-Diese Startfassung verarbeitet Jobs aus Redis und schreibt Resultate nach Postgres.
+## Ersetzt
+- `services/worker/app/worker.py`
 
-## Aufgaben
+## Zusätzliche Env-Variablen
 
-- Jobs via `BLPOP` aus Redis lesen
-- Status auf `processing` setzen
-- Input aus Text oder Datei verarbeiten
-- Ergebnis gegen `schema-registry` validieren
-- Ergebnis durch `rule-engine` prüfen
-- Status / Ergebnis nach Postgres schreiben
-- DLQ bei wiederholtem Fehler
+```env
+WORKER_ENABLE_LLM=1
+WORKER_LLM_TIMEOUT=90
+WORKER_LLM_MAX_CHARS=12000
+WORKER_LLM_FALLBACK_HEURISTIC=1
+```
 
-## Hinweis
+## Verhalten
 
-Die Funktion `derive_structured_result()` ist bewusst als MVP gehalten.
-Dort ersetzt du später die Heuristik durch:
-- parser-service Response-Mapping
-- llm-router Aufruf
-- RAG-Integration
-- task-spezifische Extraktion
+- Parser/Text wird wie bisher verarbeitet
+- Worker baut einen Prompt
+- Aufruf an `LLM_ROUTER_URL + /chat`
+- Antwort muss JSON enthalten
+- JSON wird in das Schema `tasks/document_analysis` normalisiert
+- danach wie bisher:
+  - schema-registry
+  - rule-engine
+  - Persistenz
+
+## Rollout
+
+1. Datei austauschen
+2. Env ergänzen
+3. `bash setup-stack.sh svc`
+4. Testjob absetzen
