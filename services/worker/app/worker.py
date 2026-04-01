@@ -131,6 +131,8 @@ def heuristic_result(parsed: dict[str, Any]) -> dict[str, Any]:
         "document_type": detect_document_type_hint(text) or "document",
         "sample_type": None,
         "product_name": None,
+        "matrix": None,
+        "assessment": None,
         "findings": [],
         "warnings": [],
     }
@@ -157,11 +159,16 @@ Gib exakt dieses JSON-Schema zurück:
   "document_type": "contract|invoice|report|lab_report|document",
   "sample_type": null,
   "product_name": null,
+  "matrix": null,
+  "assessment": null,
   "findings": [
     {{
       "parameter": "string",
       "value": null,
-      "unit": null
+      "unit": null,
+      "limit_value": null,
+      "limit_unit": null,
+      "status": "ok|above_limit|below_limit|unknown|null"
     }}
   ],
   "warnings": [
@@ -178,15 +185,22 @@ Regeln:
 6. findings nur mit echten messbaren Parametern füllen.
 7. Produktnamen, Probennamen und Eigennamen niemals übersetzen. Originalsprache beibehalten.
 8. Wenn eine Probe explizit benannt ist, setze sample_type auf diese Bezeichnung.
-9. warnings sparsam verwenden.
-10. Keine generischen Aussagen wie:
+9. Setze matrix auf allgemeine Produktklasse, z. B. Getränk, Gewürz, Öl, Pulver, Milchprodukt, unbekannt.
+10. Setze assessment, wenn im Text Begriffe wie "unauffällig", "auffällig", "Grenzwert überschritten", "nicht konform" oder ähnliche Bewertungen vorkommen.
+11. status pro finding:
+    - above_limit wenn explizit Grenzwertüberschreitung genannt ist
+    - ok wenn explizit unauffällig / innerhalb Grenzwert genannt ist
+    - sonst unknown
+12. limit_value und limit_unit nur setzen, wenn im Text explizit genannt.
+13. warnings sparsam verwenden.
+14. Keine generischen Aussagen wie:
    - "Keine relevante Analysefunde ..."
    - "Keine Informationen gefunden"
    - "Keine Analyse möglich"
    - "Mehrere mögliche Produktnamen erkannt"
    - "Text enthält keine messbaren Parameter"
-11. Wenn keine sinnvollen warnings vorliegen: warnings=[].
-12. value nur als Zahl, nicht als String.
+15. Wenn keine sinnvollen warnings vorliegen: warnings=[].
+16. value und limit_value nur als Zahl, nicht als String.
 
 Metadaten:
 - filename: {filename}
@@ -234,8 +248,9 @@ def normalize_findings(value: Any) -> list[dict[str, Any]]:
         parameter = str(item.get("parameter") or "").strip()
         if not parameter:
             continue
-        raw_value = item.get("value")
+
         parsed_value = None
+        raw_value = item.get("value")
         if raw_value not in (None, ""):
             try:
                 parsed_value = float(raw_value)
@@ -243,11 +258,32 @@ def normalize_findings(value: Any) -> list[dict[str, Any]]:
                     parsed_value = int(parsed_value)
             except Exception:
                 parsed_value = None
+
+        parsed_limit_value = None
+        raw_limit_value = item.get("limit_value")
+        if raw_limit_value not in (None, ""):
+            try:
+                parsed_limit_value = float(raw_limit_value)
+                if parsed_limit_value.is_integer():
+                    parsed_limit_value = int(parsed_limit_value)
+            except Exception:
+                parsed_limit_value = None
+
+        status = item.get("status")
+        allowed_status = {"ok", "above_limit", "below_limit", "unknown"}
+        if status not in allowed_status:
+            status = "unknown"
+
         unit = item.get("unit")
+        limit_unit = item.get("limit_unit")
+
         findings.append({
             "parameter": parameter,
             "value": parsed_value,
             "unit": str(unit).strip() if unit not in (None, "") else None,
+            "limit_value": parsed_limit_value,
+            "limit_unit": str(limit_unit).strip() if limit_unit not in (None, "") else None,
+            "status": status,
         })
     return findings
 
@@ -290,6 +326,36 @@ def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
     return deduped
 
 
+def detect_matrix(sample_type: str | None, product_name: str | None) -> str | None:
+    source = " ".join([sample_type or "", product_name or ""]).lower()
+    if not source.strip():
+        return None
+    if any(x in source for x in ["saft", "getränk", "wasser", "limonade"]):
+        return "Getränk"
+    if any(x in source for x in ["gewürz", "curry", "mischung", "pulver"]):
+        return "Gewürz"
+    if any(x in source for x in ["öl", "olive", "raps"]):
+        return "Öl"
+    if any(x in source for x in ["milch", "joghurt", "käse"]):
+        return "Milchprodukt"
+    return None
+
+
+def normalize_assessment(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip().lower()
+    if "unauffällig" in text:
+        return "unauffällig"
+    if "auffällig" in text:
+        return "auffällig"
+    if "grenzwert" in text and "überschritten" in text:
+        return "grenzwertüberschreitung"
+    if "nicht konform" in text:
+        return "nicht konform"
+    return str(value).strip()
+
+
 def normalize_result(data: dict[str, Any], document_type_hint: str | None) -> dict[str, Any]:
     document_type = str(data.get("document_type") or "document").strip().lower()
     allowed = {"contract", "invoice", "report", "lab_report", "document"}
@@ -309,14 +375,26 @@ def normalize_result(data: dict[str, Any], document_type_hint: str | None) -> di
     sample_type = data.get("sample_type")
     product_name = data.get("product_name")
     findings = normalize_findings(data.get("findings", []))
+    matrix = data.get("matrix")
+    assessment = normalize_assessment(data.get("assessment"))
 
     if document_type in {"contract", "invoice"}:
         findings = []
+        matrix = None
+        assessment = None
+
+    if matrix in (None, ""):
+        matrix = detect_matrix(
+            str(sample_type).strip() if sample_type not in (None, "") else None,
+            str(product_name).strip() if product_name not in (None, "") else None,
+        )
 
     return {
         "document_type": document_type,
         "sample_type": str(sample_type).strip() if sample_type not in (None, "") else None,
         "product_name": str(product_name).strip() if product_name not in (None, "") else None,
+        "matrix": str(matrix).strip() if matrix not in (None, "") else None,
+        "assessment": assessment,
         "findings": findings,
         "warnings": sanitize_warnings(data.get("warnings", []), document_type),
     }
