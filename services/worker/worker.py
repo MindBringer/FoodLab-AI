@@ -123,19 +123,27 @@ def parse_input(job: dict[str, Any]) -> dict[str, Any]:
         return {"text": "", "metadata": job["metadata"]}
 
 
+def detect_document_type_hint(text: str) -> str | None:
+    t = (text or "").lower()
+
+    contract_markers = ["vertrag", "contract", "kündigungsfrist", "vertragsparteien", "vereinbarung"]
+    invoice_markers = ["rechnung", "invoice", "rechnungsnummer", "mwst", "ust", "netto", "brutto"]
+    lab_markers = ["labor", "analyse", "lab report", "probe", "mg/kg", "µg", "ph-wert", "ph wert"]
+
+    if any(m in t for m in contract_markers):
+        return "contract"
+    if any(m in t for m in invoice_markers):
+        return "invoice"
+    if any(m in t for m in lab_markers):
+        return "lab_report"
+    if "bericht" in t or "report" in t:
+        return "report"
+    return None
+
+
 def heuristic_result(parsed: dict[str, Any]) -> dict[str, Any]:
     text = parsed.get("text") or parsed.get("content") or ""
-    text_lower = text.lower()
-
-    document_type = "document"
-    if "vertrag" in text_lower or "contract" in text_lower:
-        document_type = "contract"
-    elif "rechnung" in text_lower or "invoice" in text_lower:
-        document_type = "invoice"
-    elif "bericht" in text_lower or "report" in text_lower:
-        document_type = "report"
-    elif "analyse" in text_lower or "labor" in text_lower or "lab" in text_lower:
-        document_type = "lab_report"
+    document_type = detect_document_type_hint(text) or "document"
 
     return {
         "document_type": document_type,
@@ -153,10 +161,12 @@ def trim_text(text: str, max_chars: int) -> str:
     return text[:max_chars]
 
 
-def build_prompt(text: str, metadata: dict[str, Any]) -> str:
+def build_prompt(text: str, metadata: dict[str, Any], document_type_hint: str | None) -> str:
     filename = metadata.get("filename")
     content_type = metadata.get("content_type")
     entry_channel = metadata.get("entry_channel")
+
+    hint_block = f'Dokumentklassen-Hinweis: "{document_type_hint}"' if document_type_hint else "Dokumentklassen-Hinweis: none"
 
     return f"""
 Du bist ein Extraktionsmodul für FoodLab.
@@ -186,21 +196,19 @@ Gib exakt dieses JSON-Schema zurück:
 Verbindliche Regeln:
 1. Nur die Felder aus dem Schema verwenden.
 2. document_type immer setzen.
-3. Wenn der Text überwiegend ein Vertrag ist: document_type="contract".
-4. Wenn der Text überwiegend eine Rechnung ist: document_type="invoice".
-5. Wenn der Text überwiegend ein Labor- oder Analysebericht ist: document_type="lab_report".
-6. Wenn nichts klar passt: document_type="document".
-7. findings nur für tatsächlich erkennbare strukturierte Messwerte / Parameter füllen.
-8. Bei Verträgen und allgemeinen Berichten findings normalerweise leer lassen.
+3. Wenn ein starker Dokumentklassen-Hinweis vorhanden ist, übernimm ihn, sofern der Text nicht klar dagegen spricht.
+4. Bei Vertragstexten: document_type="contract", findings=[].
+5. Bei Rechnungstexten: document_type="invoice", findings=[].
+6. Bei Labor-/Analyseberichten: document_type="lab_report" und findings nur mit echten messbaren Parametern füllen.
+7. Bei allgemeinen Berichten: document_type="report".
+8. Wenn nichts klar passt: document_type="document".
 9. warnings sparsam verwenden.
 10. Keine generischen Aussagen wie:
    - "Keine relevante Analysefunde ..."
    - "Keine Informationen gefunden"
    - "Keine Analyse möglich"
-11. warnings nur verwenden, wenn wirklich fachlich relevant, z. B.:
-   - "Dokument stark verkürzt"
-   - "Einheit uneindeutig"
    - "Mehrere mögliche Produktnamen erkannt"
+11. warnings nur verwenden, wenn wirklich fachlich relevant.
 12. Wenn keine sinnvollen warnings vorliegen: warnings = [].
 13. sample_type und product_name nur setzen, wenn klar im Text erkennbar, sonst null.
 14. value nur als Zahl, nicht als String.
@@ -209,6 +217,7 @@ Metadaten:
 - filename: {filename}
 - content_type: {content_type}
 - entry_channel: {entry_channel}
+- {hint_block}
 
 Dokumentinhalt:
 {text}
@@ -288,6 +297,7 @@ def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
         r"keine relevante analysefunde",
         r"no relevant analysis",
         r"no findings",
+        r"mehrere mögliche produktnamen",
     ]
 
     cleaned: list[str] = []
@@ -300,12 +310,11 @@ def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
         if any(re.search(pattern, lower) for pattern in blocked_patterns):
             continue
 
-        if document_type == "contract" and "analyse" in lower:
+        if document_type == "contract" and ("analyse" in lower or "produkt" in lower):
             continue
 
         cleaned.append(text)
 
-    # deduplicate while preserving order
     deduped: list[str] = []
     seen: set[str] = set()
     for item in cleaned:
@@ -315,20 +324,34 @@ def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
     return deduped
 
 
-def normalize_result(data: dict[str, Any]) -> dict[str, Any]:
+def normalize_result(data: dict[str, Any], document_type_hint: str | None) -> dict[str, Any]:
     document_type = str(data.get("document_type") or "document").strip().lower()
     allowed_types = {"contract", "invoice", "report", "lab_report", "document"}
     if document_type not in allowed_types:
         document_type = "document"
 
+    if document_type_hint in {"contract", "invoice", "lab_report", "report"}:
+        if document_type == "document":
+            document_type = document_type_hint
+        elif document_type_hint == "contract" and document_type != "contract":
+            document_type = "contract"
+        elif document_type_hint == "invoice" and document_type != "invoice":
+            document_type = "invoice"
+        elif document_type_hint == "lab_report" and document_type not in {"lab_report", "report"}:
+            document_type = "lab_report"
+
     sample_type = data.get("sample_type")
     product_name = data.get("product_name")
+    findings = normalize_findings(data.get("findings", []))
+
+    if document_type in {"contract", "invoice"}:
+        findings = []
 
     return {
         "document_type": document_type,
         "sample_type": str(sample_type).strip() if sample_type not in (None, "") else None,
         "product_name": str(product_name).strip() if product_name not in (None, "") else None,
-        "findings": normalize_findings(data.get("findings", [])),
+        "findings": findings,
         "warnings": sanitize_warnings(data.get("warnings", []), document_type),
     }
 
@@ -349,18 +372,19 @@ def call_llm_router(prompt: str) -> dict[str, Any]:
 def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
     text = parsed.get("text") or parsed.get("content") or ""
     metadata = parsed.get("metadata") or {}
+    document_type_hint = detect_document_type_hint(text)
 
     if not WORKER_ENABLE_LLM:
         return heuristic_result(parsed)
 
     text = trim_text(text, WORKER_LLM_MAX_CHARS)
-    prompt = build_prompt(text, metadata)
+    prompt = build_prompt(text, metadata, document_type_hint)
 
     try:
         llm_response = call_llm_router(prompt)
         llm_text = llm_response.get("text", "")
         data = extract_json_object(llm_text)
-        result = normalize_result(data)
+        result = normalize_result(data, document_type_hint)
 
         result["warnings"] = result.get("warnings", []) + [
             f"llm_provider={llm_response.get('provider')}",
