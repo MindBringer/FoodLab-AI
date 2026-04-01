@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -23,6 +24,11 @@ JOB_DLQ_NAME = os.getenv("JOB_DLQ_NAME", "foodlab:jobs:dlq")
 JOB_RETRY_LIMIT = int(os.getenv("JOB_RETRY_LIMIT", "3"))
 POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "2"))
 
+WORKER_ENABLE_LLM = os.getenv("WORKER_ENABLE_LLM", "1") == "1"
+WORKER_LLM_TIMEOUT = int(os.getenv("WORKER_LLM_TIMEOUT", "90"))
+WORKER_LLM_MAX_CHARS = int(os.getenv("WORKER_LLM_MAX_CHARS", "12000"))
+WORKER_LLM_FALLBACK_HEURISTIC = os.getenv("WORKER_LLM_FALLBACK_HEURISTIC", "1") == "1"
+
 session = requests.Session()
 
 
@@ -34,7 +40,15 @@ def get_redis() -> redis.Redis:
     return redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def update_status(job_id: str, status: str, *, result: dict[str, Any] | None = None, validation: dict[str, Any] | None = None, rules: dict[str, Any] | None = None, error_message: str | None = None) -> None:
+def update_status(
+    job_id: str,
+    status: str,
+    *,
+    result: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    rules: dict[str, Any] | None = None,
+    error_message: str | None = None,
+) -> None:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -90,7 +104,6 @@ def parse_input(job: dict[str, Any]) -> dict[str, Any]:
     if job["input_type"] == "text":
         return {"text": job["input_text"], "metadata": job["metadata"]}
 
-    # tolerant wrapper: try generic parser endpoint, fall back to reading plain text files
     source_path = job["source_path"]
     try:
         with open(source_path, "rb") as f:
@@ -110,7 +123,7 @@ def parse_input(job: dict[str, Any]) -> dict[str, Any]:
         return {"text": "", "metadata": job["metadata"]}
 
 
-def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
+def heuristic_result(parsed: dict[str, Any]) -> dict[str, Any]:
     text = parsed.get("text") or parsed.get("content") or ""
     text_lower = text.lower()
 
@@ -124,16 +137,193 @@ def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
     elif "analyse" in text_lower or "lab" in text_lower:
         document_type = "lab_report"
 
-    findings: list[dict[str, Any]] = []
-    warnings: list[str] = []
-
     return {
         "document_type": document_type,
         "sample_type": None,
         "product_name": None,
-        "findings": findings,
+        "findings": [],
+        "warnings": [],
+    }
+
+
+def trim_text(text: str, max_chars: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars]
+
+
+def build_prompt(text: str, metadata: dict[str, Any]) -> str:
+    filename = metadata.get("filename")
+    content_type = metadata.get("content_type")
+    entry_channel = metadata.get("entry_channel")
+
+    return f"""
+Du analysierst Dokumente für FoodLab.
+
+Aufgabe:
+Lies den folgenden Dokumentinhalt und gib AUSSCHLIESSLICH gültiges JSON zurück.
+Keine Einleitung. Keine Markdown-Codeblöcke. Kein zusätzlicher Text.
+
+Zielstruktur:
+{{
+  "document_type": "contract|invoice|report|lab_report|document",
+  "sample_type": null,
+  "product_name": null,
+  "findings": [
+    {{
+      "parameter": "string",
+      "value": null,
+      "unit": null
+    }}
+  ],
+  "warnings": [
+    "string"
+  ]
+}}
+
+Regeln:
+- Nur gültiges JSON ausgeben.
+- document_type muss immer gesetzt sein.
+- Wenn nichts Sicheres gefunden wird: document_type = "document".
+- findings ist immer ein Array.
+- warnings ist immer ein Array.
+- Keine zusätzlichen Felder erzeugen.
+- value nur als Zahl, wenn im Text klar erkennbar.
+- sample_type und product_name nur setzen, wenn im Text erkennbar, sonst null.
+
+Metadaten:
+- filename: {filename}
+- content_type: {content_type}
+- entry_channel: {entry_channel}
+
+Dokumentinhalt:
+{text}
+""".strip()
+
+
+def extract_json_object(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        data = json.loads(fenced.group(1))
+        if isinstance(data, dict):
+            return data
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = raw[start : end + 1]
+        data = json.loads(candidate)
+        if isinstance(data, dict):
+            return data
+
+    raise ValueError("LLM response did not contain valid JSON object")
+
+
+def normalize_findings(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    findings: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        parameter = str(item.get("parameter") or "").strip()
+        if not parameter:
+            continue
+
+        raw_value = item.get("value")
+        parsed_value = None
+        if raw_value is not None and raw_value != "":
+            try:
+                parsed_value = float(raw_value)
+                if parsed_value.is_integer():
+                    parsed_value = int(parsed_value)
+            except Exception:
+                parsed_value = None
+
+        unit = item.get("unit")
+        findings.append(
+            {
+                "parameter": parameter,
+                "value": parsed_value,
+                "unit": str(unit).strip() if unit not in (None, "") else None,
+            }
+        )
+    return findings
+
+
+def normalize_result(data: dict[str, Any]) -> dict[str, Any]:
+    document_type = str(data.get("document_type") or "document").strip().lower()
+    allowed_types = {"contract", "invoice", "report", "lab_report", "document"}
+    if document_type not in allowed_types:
+        document_type = "document"
+
+    sample_type = data.get("sample_type")
+    product_name = data.get("product_name")
+    warnings = data.get("warnings", [])
+
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+    warnings = [str(w).strip() for w in warnings if str(w).strip()]
+
+    return {
+        "document_type": document_type,
+        "sample_type": str(sample_type).strip() if sample_type not in (None, "") else None,
+        "product_name": str(product_name).strip() if product_name not in (None, "") else None,
+        "findings": normalize_findings(data.get("findings", [])),
         "warnings": warnings,
     }
+
+
+def call_llm_router(prompt: str) -> dict[str, Any]:
+    resp = session.post(
+        f"{LLM_ROUTER_URL}/chat",
+        json={"prompt": prompt},
+        timeout=WORKER_LLM_TIMEOUT,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if not isinstance(body, dict):
+        raise ValueError("Unexpected llm-router response")
+    return body
+
+
+def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
+    text = parsed.get("text") or parsed.get("content") or ""
+    metadata = parsed.get("metadata") or {}
+
+    if not WORKER_ENABLE_LLM:
+        return heuristic_result(parsed)
+
+    text = trim_text(text, WORKER_LLM_MAX_CHARS)
+    prompt = build_prompt(text, metadata)
+
+    try:
+        llm_response = call_llm_router(prompt)
+        llm_text = llm_response.get("text", "")
+        data = extract_json_object(llm_text)
+        result = normalize_result(data)
+        result["warnings"] = result.get("warnings", []) + [
+            f"llm_provider={llm_response.get('provider')}",
+            f"llm_model={llm_response.get('model')}",
+        ]
+        return result
+    except Exception as exc:
+        if WORKER_LLM_FALLBACK_HEURISTIC:
+            fallback = heuristic_result(parsed)
+            fallback["warnings"] = fallback.get("warnings", []) + [f"llm_fallback={type(exc).__name__}"]
+            return fallback
+        raise
 
 
 def validate_result(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
