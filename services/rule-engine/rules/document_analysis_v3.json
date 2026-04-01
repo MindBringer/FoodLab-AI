@@ -1,0 +1,47 @@
+{
+  "rule_set": "document_analysis_v3",
+  "rules": [
+    {
+      "rule_id": "lead_max",
+      "field": "findings[]",
+      "where": {
+        "parameter_equals": "Blei",
+        "unit_equals": "mg/kg"
+      },
+      "compare_field": "value",
+      "max": 0.1,
+      "severity": "warning",
+      "message": "Blei-Grenzwert überschritten"
+    },
+    {
+      "rule_id": "cadmium_max",
+      "field": "findings[]",
+      "where": {
+        "parameter_equals": "Cadmium",
+        "unit_equals": "mg/kg"
+      },
+      "compare_field": "value",
+      "max": 0.1,
+      "severity": "warning",
+      "message": "Cadmium-Grenzwert überschritten"
+    },
+    {
+      "rule_id": "heavy_metal_unit_missing",
+      "field": "findings[]",
+      "where": {
+        "parameter_equals": "Blei"
+      },
+      "compare_field": "unit",
+      "equals": null,
+      "severity": "warning",
+      "message": "Einheit für Blei fehlt"
+    },
+    {
+      "rule_id": "contract_keyword",
+      "field": "document_type",
+      "equals": "contract",
+      "severity": "info",
+      "message": "Vertrag erkannt"
+    }
+  ]
+}
