@@ -134,7 +134,7 @@ def heuristic_result(parsed: dict[str, Any]) -> dict[str, Any]:
         document_type = "invoice"
     elif "bericht" in text_lower or "report" in text_lower:
         document_type = "report"
-    elif "analyse" in text_lower or "lab" in text_lower:
+    elif "analyse" in text_lower or "labor" in text_lower or "lab" in text_lower:
         document_type = "lab_report"
 
     return {
@@ -159,13 +159,14 @@ def build_prompt(text: str, metadata: dict[str, Any]) -> str:
     entry_channel = metadata.get("entry_channel")
 
     return f"""
-Du analysierst Dokumente für FoodLab.
+Du bist ein Extraktionsmodul für FoodLab.
+Antworte AUSSCHLIESSLICH mit gültigem JSON.
+Keine Einleitung. Keine Erklärungen. Keine Markdown-Codeblöcke.
 
-Aufgabe:
-Lies den folgenden Dokumentinhalt und gib AUSSCHLIESSLICH gültiges JSON zurück.
-Keine Einleitung. Keine Markdown-Codeblöcke. Kein zusätzlicher Text.
+Ziel:
+Extrahiere ein minimales, stabiles Analyseobjekt aus dem Dokumentinhalt.
 
-Zielstruktur:
+Gib exakt dieses JSON-Schema zurück:
 {{
   "document_type": "contract|invoice|report|lab_report|document",
   "sample_type": null,
@@ -182,15 +183,27 @@ Zielstruktur:
   ]
 }}
 
-Regeln:
-- Nur gültiges JSON ausgeben.
-- document_type muss immer gesetzt sein.
-- Wenn nichts Sicheres gefunden wird: document_type = "document".
-- findings ist immer ein Array.
-- warnings ist immer ein Array.
-- Keine zusätzlichen Felder erzeugen.
-- value nur als Zahl, wenn im Text klar erkennbar.
-- sample_type und product_name nur setzen, wenn im Text erkennbar, sonst null.
+Verbindliche Regeln:
+1. Nur die Felder aus dem Schema verwenden.
+2. document_type immer setzen.
+3. Wenn der Text überwiegend ein Vertrag ist: document_type="contract".
+4. Wenn der Text überwiegend eine Rechnung ist: document_type="invoice".
+5. Wenn der Text überwiegend ein Labor- oder Analysebericht ist: document_type="lab_report".
+6. Wenn nichts klar passt: document_type="document".
+7. findings nur für tatsächlich erkennbare strukturierte Messwerte / Parameter füllen.
+8. Bei Verträgen und allgemeinen Berichten findings normalerweise leer lassen.
+9. warnings sparsam verwenden.
+10. Keine generischen Aussagen wie:
+   - "Keine relevante Analysefunde ..."
+   - "Keine Informationen gefunden"
+   - "Keine Analyse möglich"
+11. warnings nur verwenden, wenn wirklich fachlich relevant, z. B.:
+   - "Dokument stark verkürzt"
+   - "Einheit uneindeutig"
+   - "Mehrere mögliche Produktnamen erkannt"
+12. Wenn keine sinnvollen warnings vorliegen: warnings = [].
+13. sample_type und product_name nur setzen, wenn klar im Text erkennbar, sonst null.
+14. value nur als Zahl, nicht als String.
 
 Metadaten:
 - filename: {filename}
@@ -237,12 +250,13 @@ def normalize_findings(value: Any) -> list[dict[str, Any]]:
     for item in value:
         if not isinstance(item, dict):
             continue
+
         parameter = str(item.get("parameter") or "").strip()
         if not parameter:
             continue
 
         raw_value = item.get("value")
-        parsed_value = None
+        parsed_value: float | int | None = None
         if raw_value is not None and raw_value != "":
             try:
                 parsed_value = float(raw_value)
@@ -262,6 +276,45 @@ def normalize_findings(value: Any) -> list[dict[str, Any]]:
     return findings
 
 
+def sanitize_warnings(warnings: Any, document_type: str) -> list[str]:
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)] if warnings not in (None, "") else []
+
+    blocked_patterns = [
+        r"keine relevante analyse",
+        r"keine analyse",
+        r"keine information",
+        r"nichts gefunden",
+        r"keine relevante analysefunde",
+        r"no relevant analysis",
+        r"no findings",
+    ]
+
+    cleaned: list[str] = []
+    for w in warnings:
+        text = str(w).strip()
+        if not text:
+            continue
+
+        lower = text.lower()
+        if any(re.search(pattern, lower) for pattern in blocked_patterns):
+            continue
+
+        if document_type == "contract" and "analyse" in lower:
+            continue
+
+        cleaned.append(text)
+
+    # deduplicate while preserving order
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in cleaned:
+        if item not in seen:
+            deduped.append(item)
+            seen.add(item)
+    return deduped
+
+
 def normalize_result(data: dict[str, Any]) -> dict[str, Any]:
     document_type = str(data.get("document_type") or "document").strip().lower()
     allowed_types = {"contract", "invoice", "report", "lab_report", "document"}
@@ -270,18 +323,13 @@ def normalize_result(data: dict[str, Any]) -> dict[str, Any]:
 
     sample_type = data.get("sample_type")
     product_name = data.get("product_name")
-    warnings = data.get("warnings", [])
-
-    if not isinstance(warnings, list):
-        warnings = [str(warnings)]
-    warnings = [str(w).strip() for w in warnings if str(w).strip()]
 
     return {
         "document_type": document_type,
         "sample_type": str(sample_type).strip() if sample_type not in (None, "") else None,
         "product_name": str(product_name).strip() if product_name not in (None, "") else None,
         "findings": normalize_findings(data.get("findings", [])),
-        "warnings": warnings,
+        "warnings": sanitize_warnings(data.get("warnings", []), document_type),
     }
 
 
@@ -313,6 +361,7 @@ def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
         llm_text = llm_response.get("text", "")
         data = extract_json_object(llm_text)
         result = normalize_result(data)
+
         result["warnings"] = result.get("warnings", []) + [
             f"llm_provider={llm_response.get('provider')}",
             f"llm_model={llm_response.get('model')}",
