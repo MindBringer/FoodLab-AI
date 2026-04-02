@@ -42,7 +42,7 @@ class MetaModel(BaseModel):
 
 class Envelope(BaseModel):
     success: bool
-    schema_version: str = "1.0.0"
+    schema_version: str | None = None
     job_id: str | None = None
     status: str
     data: dict[str, Any] = Field(default_factory=dict)
@@ -131,9 +131,17 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="invalid api key")
 
 
-def envelope_ok(*, status: str, job_id: str | None = None, data: dict[str, Any] | None = None, entry_channel: str | None = None) -> dict[str, Any]:
+def envelope_ok(
+    *,
+    status: str,
+    job_id: str | None = None,
+    data: dict[str, Any] | None = None,
+    entry_channel: str | None = None,
+    schema_version: str | None = None,
+) -> dict[str, Any]:
     return Envelope(
         success=True,
+        schema_version=schema_version,
         status=status,
         job_id=job_id,
         data=data or {},
@@ -244,7 +252,13 @@ def submit_text(req: TextSubmitRequest) -> JSONResponse:
     )
     queue_job(job_id)
     return JSONResponse(
-        envelope_ok(status="queued", job_id=job_id, entry_channel=req.entry_channel, data={"message": "job queued"}),
+        envelope_ok(
+            status="queued",
+            job_id=job_id,
+            entry_channel=req.entry_channel,
+            schema_version=req.schema_version,
+            data={"message": "job queued"},
+        ),
         status_code=202,
     )
 
@@ -284,7 +298,13 @@ async def submit_file(
     )
     queue_job(job_id)
     return JSONResponse(
-        envelope_ok(status="queued", job_id=job_id, entry_channel=entry_channel, data={"message": "job queued"}),
+        envelope_ok(
+            status="queued",
+            job_id=job_id,
+            entry_channel=entry_channel,
+            schema_version=schema_version,
+            data={"message": "job queued"},
+        ),
         status_code=202,
     )
 
@@ -296,13 +316,12 @@ def get_job(job_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="job not found")
     return envelope_ok(
         status=job["status"],
-        job_id=job["job_id"],
+        job_id=job_id,
+        schema_version=job["schema_version"],
         data={
-            "schema_name": job["schema_name"],
-            "schema_version": job["schema_version"],
-            "rule_set": job["rule_set"],
-            "created_at": job["created_at"],
-            "updated_at": job["updated_at"],
+            "result": job["data"],
+            "validation": job["validation"],
+            "rules": job["rules"],
         },
     )
 
