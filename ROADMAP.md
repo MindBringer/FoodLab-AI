@@ -3,23 +3,23 @@
 ## Status
 ### Erledigt
 
-Phase 0 komplett
-Sprint 1 größtenteils
-Sprint 4 größtenteils
-Sprint 5 größtenteils
-Sprint 6 größtenteils
+- Phase 0 komplett
+- Sprint 1 größtenteils
+- Sprint 4 größtenteils
+- Sprint 5 größtenteils
+- Sprint 6 größtenteils
 
 ### Teilweise erledigt
 
-Sprint 2
-Sprint 3
-Sprint 13
-Sprint 17
-Sprint 19
+- Sprint 2
+- Sprint 3
+- Sprint 13
+- Sprint 17
+- Sprint 19
 
 ### Offen
 
-alles ab Sprint 7 außer den genannten Teilständen
+- alles ab Sprint 7 außer den genannten Teilständen
 
 ## Ziel
 
