@@ -3,12 +3,18 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
 import redis
 import requests
+
+APP_NAME = "foodlab-worker"
+APP_VERSION = "0.2.0"
+WORKER_ID = os.getenv("WORKER_ID", socket.gethostname())
 
 POSTGRES_DSN = os.getenv("POSTGRES_DSN", "postgresql://foodlab:change-me@postgres:5432/foodlab")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -29,6 +35,14 @@ WORKER_LLM_FALLBACK_HEURISTIC = os.getenv("WORKER_LLM_FALLBACK_HEURISTIC", "1") 
 session = requests.Session()
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def utc_now_iso() -> str:
+    return utc_now().isoformat()
+
+
 def get_conn():
     return psycopg.connect(POSTGRES_DSN)
 
@@ -37,16 +51,35 @@ def get_redis() -> redis.Redis:
     return redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def update_status(job_id: str, status: str, *, result=None, validation=None, rules=None, error_message=None) -> None:
+def ensure_db() -> None:
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("ALTER TABLE foodlab_jobs ADD COLUMN IF NOT EXISTS trace_json JSONB NOT NULL DEFAULT '{}'::jsonb;")
+        cur.execute("ALTER TABLE foodlab_jobs ADD COLUMN IF NOT EXISTS runtime_json JSONB NOT NULL DEFAULT '{}'::jsonb;")
+        conn.commit()
+
+
+# ---------- persistence ----------
+
+def update_job_record(
+    job_id: str,
+    *,
+    status: str | None = None,
+    result: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    rules: dict[str, Any] | None = None,
+    error_message: str | None = None,
+    runtime_patch: dict[str, Any] | None = None,
+) -> None:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
             UPDATE foodlab_jobs
-            SET status = %s,
+            SET status = COALESCE(%s, status),
                 result_json = COALESCE(%s::jsonb, result_json),
                 validation_json = %s::jsonb,
                 rules_json = %s::jsonb,
                 error_message = %s,
+                runtime_json = COALESCE(runtime_json, '{}'::jsonb) || COALESCE(%s::jsonb, '{}'::jsonb),
                 updated_at = NOW()
             WHERE job_id = %s
             """,
@@ -56,6 +89,7 @@ def update_status(job_id: str, status: str, *, result=None, validation=None, rul
                 json.dumps(validation) if validation is not None else None,
                 json.dumps(rules) if rules is not None else None,
                 error_message,
+                json.dumps(runtime_patch) if runtime_patch is not None else None,
                 job_id,
             ),
         )
@@ -67,8 +101,16 @@ def fetch_job(job_id: str) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT
-              job_id, input_type, source_path, input_text,
-              metadata_json::text, schema_name, schema_version, rule_set
+              job_id,
+              input_type,
+              source_path,
+              input_text,
+              COALESCE(metadata_json, '{}'::jsonb)::text,
+              COALESCE(trace_json, '{}'::jsonb)::text,
+              COALESCE(runtime_json, '{}'::jsonb)::text,
+              schema_name,
+              schema_version,
+              rule_set
             FROM foodlab_jobs
             WHERE job_id = %s
             """,
@@ -83,11 +125,15 @@ def fetch_job(job_id: str) -> dict[str, Any] | None:
             "source_path": row[2],
             "input_text": row[3],
             "metadata": json.loads(row[4] or "{}"),
-            "schema_name": row[5],
-            "schema_version": row[6],
-            "rule_set": row[7],
+            "trace": json.loads(row[5] or "{}"),
+            "runtime": json.loads(row[6] or "{}"),
+            "schema_name": row[7],
+            "schema_version": row[8],
+            "rule_set": row[9],
         }
 
+
+# ---------- parsing ----------
 
 def parse_input(job: dict[str, Any]) -> dict[str, Any]:
     if job["input_type"] == "text":
@@ -111,6 +157,8 @@ def parse_input(job: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         return {"text": "", "metadata": job["metadata"]}
 
+
+# ---------- extraction helpers ----------
 
 def detect_document_type_hint(text: str) -> str | None:
     t = (text or "").lower()
@@ -409,13 +457,16 @@ def call_llm_router(prompt: str) -> dict[str, Any]:
     return body
 
 
-def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
+def derive_structured_result(parsed: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     text = parsed.get("text") or parsed.get("content") or ""
     metadata = parsed.get("metadata") or {}
     document_type_hint = detect_document_type_hint(text)
 
     if not WORKER_ENABLE_LLM:
-        return heuristic_result(parsed)
+        return heuristic_result(parsed), {
+            "provider": APP_NAME,
+            "model": None,
+        }
 
     text = trim_text(text, WORKER_LLM_MAX_CHARS)
     prompt = build_prompt(text, metadata, document_type_hint)
@@ -424,18 +475,22 @@ def derive_structured_result(parsed: dict[str, Any]) -> dict[str, Any]:
         llm_response = call_llm_router(prompt)
         data = extract_json_object(llm_response.get("text", ""))
         result = normalize_result(data, document_type_hint)
-        result["warnings"] = result.get("warnings", []) + [
-            f"llm_provider={llm_response.get('provider')}",
-            f"llm_model={llm_response.get('model')}",
-        ]
-        return result
+        return result, {
+            "provider": llm_response.get("provider") or APP_NAME,
+            "model": llm_response.get("model"),
+        }
     except Exception as exc:
         if WORKER_LLM_FALLBACK_HEURISTIC:
             fallback = heuristic_result(parsed)
             fallback["warnings"] = fallback.get("warnings", []) + [f"llm_fallback={type(exc).__name__}"]
-            return fallback
+            return fallback, {
+                "provider": APP_NAME,
+                "model": None,
+            }
         raise
 
+
+# ---------- validation / rules ----------
 
 def validate_result(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
     if not job["schema_name"] or not job["schema_version"]:
@@ -452,32 +507,82 @@ def validate_result(job: dict[str, Any], result: dict[str, Any]) -> dict[str, An
 def evaluate_rules(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
     if not job["rule_set"]:
         return None
-    resp = session.post(f"{RULE_ENGINE_URL}/evaluate", json={"rule_set": job["rule_set"], "payload": result}, timeout=30)
+    resp = session.post(
+        f"{RULE_ENGINE_URL}/evaluate",
+        json={"rule_set": job["rule_set"], "payload": result},
+        timeout=30,
+    )
     resp.raise_for_status()
     return resp.json()
 
+
+# ---------- execution ----------
 
 def process_job(job_id: str) -> None:
     job = fetch_job(job_id)
     if not job:
         return
 
-    update_status(job_id, "processing")
+    started_at = utc_now()
+    update_job_record(
+        job_id,
+        status="processing",
+        runtime_patch={
+            "provider": APP_NAME,
+            "api_version": APP_VERSION,
+            "worker_id": WORKER_ID,
+            "started_at": started_at.isoformat(),
+        },
+    )
+
     try:
         parsed = parse_input(job)
-        result = derive_structured_result(parsed)
+        result, llm_meta = derive_structured_result(parsed)
         validation = validate_result(job, result)
         rules = evaluate_rules(job, result)
 
         final_status = "done"
+        error_message = None
         if validation and not validation.get("valid", True):
             final_status = "failed"
-        elif rules and not rules.get("ok", True):
-            final_status = "done_with_warnings"
+            error_message = "schema validation failed"
 
-        update_status(job_id, final_status, result=result, validation=validation, rules=rules, error_message=None)
+        completed_at = utc_now()
+        processing_ms = max(int((completed_at - started_at).total_seconds() * 1000), 0)
+
+        update_job_record(
+            job_id,
+            status=final_status,
+            result=result,
+            validation=validation,
+            rules=rules,
+            error_message=error_message,
+            runtime_patch={
+                "provider": llm_meta.get("provider") or APP_NAME,
+                "model": llm_meta.get("model"),
+                "worker_id": WORKER_ID,
+                "api_version": APP_VERSION,
+                "started_at": started_at.isoformat(),
+                "completed_at": completed_at.isoformat(),
+                "processing_ms": processing_ms,
+            },
+        )
     except Exception as exc:
-        update_status(job_id, "failed", error_message=str(exc))
+        completed_at = utc_now()
+        processing_ms = max(int((completed_at - started_at).total_seconds() * 1000), 0)
+        update_job_record(
+            job_id,
+            status="failed",
+            error_message=str(exc),
+            runtime_patch={
+                "provider": APP_NAME,
+                "worker_id": WORKER_ID,
+                "api_version": APP_VERSION,
+                "started_at": started_at.isoformat(),
+                "completed_at": completed_at.isoformat(),
+                "processing_ms": processing_ms,
+            },
+        )
         raise
 
 
@@ -487,11 +592,13 @@ def send_to_dlq(message: str, reason: str) -> None:
 
 
 def loop_forever() -> None:
+    ensure_db()
     r = get_redis()
     while True:
-        item = r.blpop(JOB_QUEUE_NAME, timeout=int(POLL_SECONDS))
+        item = r.blpop(JOB_QUEUE_NAME, timeout=max(int(POLL_SECONDS), 1))
         if not item:
             continue
+
         _, raw = item
         retries = 0
         try:
