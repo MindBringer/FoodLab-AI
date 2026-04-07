@@ -182,11 +182,44 @@ Fachlogik und Validierung von LLM-Logik trennen.
 * Worker-Anbindung umsetzen
 * Ergebnisstruktur für Warnungen, Verstöße und Hinweise vereinheitlichen
 
+---
+
+## Sprint 6.1 - Context Builder
+
+- Nicht komplex – einfach sauber kapseln
+- Umsetzung in FoodLab, zentrale Funktion:
+{
+  "task": "...",
+  "ticket_data": {...},
+  "similar_cases": [...],
+  "system_context": {...}
+}
+
+## Sprint 6.2 - Strukturierte LLM Outputs
+
+- mehr Struktur in Outputs:
+{
+  "analysis": "...",
+  "root_cause": "...",
+  "solution": "...",
+  "confidence": 0.0-1.0
+}
+
+## Sprint 6.3 Logging und Trace-ID
+
+- jede Anfrage bekommt:
+
+  - request_id
+  - input
+  - output
+  - timestamp
+
 ### Definition of Done
 
 * Regeln werden reproduzierbar angewendet
 * Fachliche Validierung ist nicht mehr implizit im Worker versteckt
 * LLM-Ergebnisse können regelbasiert abgesichert werden
+* Context, Outputs und Logging stabil
 
 ---
 
@@ -212,6 +245,32 @@ Erster produktiver Einstiegskanal mit stabilem Connector-Vertrag.
 * End-to-End Flow funktioniert stabil
 * Flows können strukturierte FoodLab-Ergebnisse direkt weiterverarbeiten
 * Connector-Vertrag ist wiederholbar einsetzbar
+
+---
+
+## Sprint 7.1 - Qualität und Kontrolle
+
+1. Evaluation Layer (leicht)
+if confidence < 0.6:
+    mark_as_low_quality
+
+oder:
+
+Pflichtfelder prüfen
+Antwortlänge
+Struktur validieren
+2. Similar Case Ranking verbessern
+
+Ziel:
+
+Ranking + Relevanz
+ggf. Embeddings (optional später)
+3. Feedback-Loop vorbereiten
+Nutzer kann markieren:
+👍 Lösung korrekt
+👎 Lösung falsch
+
+👉 wichtig für spätere Agenten
 
 ---
 
@@ -634,3 +693,44 @@ Die Umsetzung erfolgt strikt entlang der Abhängigkeiten:
 Core → Verträge / Queue / Validierung → Integration → Dokumentquellen / Wissen → Use Case → Betrieb
 
 Frontend und Chat werden bewusst zuletzt umgesetzt, außer sie dienen als Testwerkzeug.
+
+---
+
+# OPTIONAL: Erweiterung Agentensystem
+Phase x – Selektive Agentifizierung (nur für bestimmte Use-Cases)
+
+👉 NICHT global einführen
+
+Nur für:
+
+hybride Fälle
+komplexe Tickets
+1. Mini-Planner (kein Full Agent!)
+if unclear_case:
+    steps = [
+        analyze,
+        retrieve_context,
+        generate_solution
+    ]
+
+👉 noch kein echtes ReAct / Chain-of-Thought nötig
+
+2. Tool Selection (leicht)
+if standard_request:
+    skip_llm
+elif complex_issue:
+    use_llm
+
+👉 kannst du sogar erstmal regelbasiert lassen
+
+🔵 Phase y – echte Agent-Architektur (später, optional)
+
+Nur wenn:
+
+mehrere Systeme aktiv gesteuert werden
+komplexe Prozesse entstehen
+
+Dann:
+
+Orchestrator raus
+Agent rein
