@@ -1,0 +1,392 @@
+openapi: 3.0.3
+info:
+  title: FoodLab Internal API
+  version: 2.0.0
+  description: |
+    Phase-1 Connector-Vertrag für Power Automate / Power Apps über Data Gateway.
+    Fokus:
+      - stabile Job-Einreichung
+      - Polling-freundliche Ergebnisabfrage
+      - saubere Trennung von trace/runtime vs. Fachdaten
+      - keine Agentik, keine impliziten Freitextverträge
+servers:
+  - url: http://foodlab-api.internal.local:8088
+security:
+  - ApiKeyHeader: []
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  schemas:
+    ErrorItem:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    TraceMeta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          nullable: true
+        correlation_id:
+          type: string
+          nullable: true
+        trace_id:
+          type: string
+          nullable: true
+        source_system:
+          type: string
+          nullable: true
+        entry_channel:
+          type: string
+          nullable: true
+
+    RuntimeMeta:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: foodlab-core-api
+        model:
+          type: string
+          nullable: true
+        processing_ms:
+          type: integer
+          format: int32
+          example: 0
+        queued_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        worker_id:
+          type: string
+          nullable: true
+        api_version:
+          type: string
+          example: 0.2.0
+
+    Meta:
+      type: object
+      properties:
+        trace:
+          $ref: '#/components/schemas/TraceMeta'
+        runtime:
+          $ref: '#/components/schemas/RuntimeMeta'
+
+    SubmitMeta:
+      type: object
+      properties:
+        correlation_id:
+          type: string
+          nullable: true
+        trace_id:
+          type: string
+          nullable: true
+        source_system:
+          type: string
+          nullable: true
+        business_context:
+          type: object
+          additionalProperties: true
+
+    SubmitTextJobRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          example: >
+            Laboranalyse Lebensmittelprobe.
+            Probe: Apfelsaft naturtrüb.
+            Produkt: Beispiel Apfelsaft.
+            pH-Wert: 3.4. Zucker: 8.2 g/100 ml.
+        schema_name:
+          type: string
+          example: tasks/document_analysis
+        schema_version:
+          type: string
+          example: 1.0.0
+        rule_set:
+          type: string
+          example: document_analysis_v1
+        entry_channel:
+          type: string
+          example: power_automate
+        metadata:
+          type: object
+          additionalProperties: true
+        meta:
+          $ref: '#/components/schemas/SubmitMeta'
+
+    JobQueuedData:
+      type: object
+      properties:
+        message:
+          type: string
+          example: job queued
+
+    ValidationResult:
+      type: object
+      additionalProperties: true
+
+    RuleEvaluation:
+      type: object
+      additionalProperties: true
+
+    DocumentAnalysisResult:
+      type: object
+      additionalProperties: true
+      description: |
+        Fachliches Ergebnis. Die konkrete Struktur wird über schema_name + schema_version bestimmt.
+
+    JobResultData:
+      type: object
+      properties:
+        result:
+          $ref: '#/components/schemas/DocumentAnalysisResult'
+        validation:
+          $ref: '#/components/schemas/ValidationResult'
+        rules:
+          $ref: '#/components/schemas/RuleEvaluation'
+
+    EnvelopeBase:
+      type: object
+      required: [success, status, data, meta, errors]
+      properties:
+        success:
+          type: boolean
+        schema_version:
+          type: string
+          nullable: true
+        job_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [queued, processing, done, failed]
+        data:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorItem'
+
+    SubmitTextJobResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/JobQueuedData'
+
+    GetJobStatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/JobResultData'
+
+    GetJobResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/JobResultData'
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+
+paths:
+  /health:
+    get:
+      summary: Healthcheck
+      operationId: Healthcheck
+      responses:
+        '200':
+          description: Service healthy
+
+  /api/v1/jobs/text:
+    post:
+      summary: Submit text analysis job
+      operationId: SubmitTextJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitTextJobRequest'
+      responses:
+        '202':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitTextJobResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/submit:
+    post:
+      summary: Submit file analysis job
+      operationId: SubmitFileJob
+      parameters:
+        - in: query
+          name: schema_name
+          schema:
+            type: string
+            default: tasks/document_analysis
+        - in: query
+          name: schema_version
+          schema:
+            type: string
+            default: 1.0.0
+        - in: query
+          name: rule_set
+          schema:
+            type: string
+            default: document_analysis_v1
+        - in: query
+          name: entry_channel
+          schema:
+            type: string
+            default: power_automate
+        - in: query
+          name: correlation_id
+          schema:
+            type: string
+        - in: query
+          name: trace_id
+          schema:
+            type: string
+        - in: query
+          name: source_system
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitTextJobResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{job_id}:
+    get:
+      summary: Get job status
+      operationId: GetJobStatus
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetJobStatusResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{job_id}/result:
+    get:
+      summary: Get job result
+      description: |
+        Polling-freundlich. Liefert immer 200, solange der Job existiert.
+        Der technische Status steht im Envelope-Feld `status`.
+      operationId: GetJobResult
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job state or result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetJobResultResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
