@@ -176,6 +176,34 @@ Analyse über mehrere Fälle
 
 ---
 
+# 6.1 DMS / Dokumentenmanagement
+
+## UC-350 – Dokument manuell ablegen
+Dokument wird in SharePoint gespeichert.
+
+## UC-351 – Dokument klassifizieren
+Bereich, Art und weitere Metadaten werden gesetzt.
+
+## UC-352 – Dokument automatisch einsortieren
+Power Automate ordnet Dokument anhand der Metadaten ein.
+
+## UC-353 – Dokumentänderung erkennen
+Neue oder geänderte Dokumente triggern Folgeprozesse.
+
+## UC-354 – Dokument in den RAG-Index aufnehmen
+FoodLab extrahiert Inhalte, erzeugt Embeddings und aktualisiert den Suchindex.
+
+## UC-355 – Dokumentensuche per Frontend
+User findet Dokumente über semantische Suche.
+
+## UC-356 – Frage zu Dokumenten stellen
+LLM + RAG liefern Antwort mit Dokumentreferenzen und SharePoint-Link.
+
+## UC-357 – Fallback bei FoodLab-Ausfall
+Dokumente bleiben direkt über SharePoint verfügbar.
+
+---
+
 # 7. Accounting / Finance
 
 ## UC-400 – Rechnungseingang
