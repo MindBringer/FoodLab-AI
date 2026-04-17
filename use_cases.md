@@ -179,28 +179,58 @@ Analyse über mehrere Fälle
 # 6.1 DMS / Dokumentenmanagement
 
 ## UC-350 – Dokument manuell ablegen
-Dokument wird in SharePoint gespeichert.
 
-## UC-351 – Dokument klassifizieren
-Bereich, Art und weitere Metadaten werden gesetzt.
+User speichert Dokument in SharePoint.
 
-## UC-352 – Dokument automatisch einsortieren
-Power Automate ordnet Dokument anhand der Metadaten ein.
+---
 
-## UC-353 – Dokumentänderung erkennen
-Neue oder geänderte Dokumente triggern Folgeprozesse.
+## UC-351 – Strukturierte Ablage
 
-## UC-354 – Dokument in den RAG-Index aufnehmen
-FoodLab extrahiert Inhalte, erzeugt Embeddings und aktualisiert den Suchindex.
+### Ordnerstruktur
 
-## UC-355 – Dokumentensuche per Frontend
-User findet Dokumente über semantische Suche.
+/DMS
+  /IT
+    /Arbeitsanweisungen
+    /Anleitungen
+    /NIS2
+  /QS
+    /HACCP
+    /Prüfprotokolle
+  /Allgemein
+    /Richtlinien
+    /Vorlagen
+  /HR
+  /Finance
 
-## UC-356 – Frage zu Dokumenten stellen
-LLM + RAG liefern Antwort mit Dokumentreferenzen und SharePoint-Link.
+---
 
-## UC-357 – Fallback bei FoodLab-Ausfall
-Dokumente bleiben direkt über SharePoint verfügbar.
+## UC-352 – Dokumenttemplate
+
+Jedes Dokument enthält:
+
+Titel:
+Bereich:
+Dokumentart:
+Version:
+Datum:
+Autor:
+Freigabe:
+Gültig ab:
+Beschreibung:
+
+---
+
+## UC-353 – Dokumentänderung erkennen (optional)
+
+---
+
+## UC-354 – RAG-Ingestion (später)
+
+---
+
+## UC-357 – Fallback
+
+Dokumente bleiben über SharePoint zugreifbar.
 
 ---
 
@@ -300,6 +330,38 @@ Nachvollziehbarkeit
 
 ---
 
-# 12. Zentrale Architekturregel
+## UC-905 – Datenmodell
 
-Alle Use Cases folgen:
+- input
+- normalized_input
+- ai_output
+- metadata
+- status
+
+---
+
+## UC-906 – API Contract
+
+- Request Schema
+- Response Schema
+- Fehlerstruktur
+
+---
+
+## UC-907 – Statusmodell
+
+- new
+- processing
+- done
+- error
+- review
+
+---
+
+## UC-908 – Fehlerhandling
+
+- Parsing Fehler
+- AI Fehler
+- Persistenz Fehler
+
+---
