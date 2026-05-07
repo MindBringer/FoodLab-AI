@@ -1,0 +1,163 @@
+swagger: '2.0'
+info:
+  title: FoodLab Internal API
+  version: 1.0.1
+  description: >-
+    Minimaler Power-Automate-Custom-Connector für FoodLab über On-Premises Data
+    Gateway. Variante mit explizitem x-api-key Header-Parameter pro Operation,
+    falls Power Platform die apiKey-Security beim Import nicht als Connection-Auth übernimmt.
+host: 192.168.30.45:8088
+basePath: /api/v1
+schemes:
+  - http
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /jobs/text:
+    post:
+      summary: Submit text analysis job
+      description: Reicht einen Text zur Lebensmittelanalyse ein und liefert eine job_id zurück.
+      operationId: SubmitTextJob
+      parameters:
+        - name: x-api-key
+          in: header
+          required: true
+          type: string
+          description: FoodLab API key
+          default: change-me
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/SubmitTextJobRequest'
+      responses:
+        '200':
+          description: Job queued
+          schema:
+            $ref: '#/definitions/SubmitTextJobResponse'
+        '400':
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '401':
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /jobs/{job_id}/result:
+    get:
+      summary: Get job result
+      description: Polling-freundliche Ergebnisabfrage.
+      operationId: GetJobResult
+      parameters:
+        - name: x-api-key
+          in: header
+          required: true
+          type: string
+          description: FoodLab API key
+          default: change-me
+        - name: job_id
+          in: path
+          required: true
+          type: string
+      responses:
+        '200':
+          description: Job state or result
+          schema:
+            $ref: '#/definitions/GetJobResultResponse'
+        '401':
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '404':
+          description: Job not found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+definitions:
+  SubmitTextJobRequest:
+    type: object
+    required:
+      - text
+    properties:
+      text:
+        type: string
+        example: Laboranalyse Lebensmittelprobe. Probe Apfelsaft naturtrüb. Produkt Beispiel Apfelsaft. pH-Wert 3.4. Zucker 8.2 g/100 ml.
+      schema_name:
+        type: string
+        example: tasks/document_analysis
+      schema_version:
+        type: string
+        example: 1.1.0
+      rule_set:
+        type: string
+        example: document_analysis_v3
+      entry_channel:
+        type: string
+        example: power_automate
+  SubmitTextJobResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+      schema_version:
+        type: string
+      job_id:
+        type: string
+      status:
+        type: string
+      data:
+        type: object
+        additionalProperties: true
+      meta:
+        type: object
+        additionalProperties: true
+      errors:
+        type: array
+        items:
+          type: object
+          additionalProperties: true
+  GetJobResultResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+      schema_version:
+        type: string
+      job_id:
+        type: string
+      status:
+        type: string
+      data:
+        type: object
+        additionalProperties: true
+      meta:
+        type: object
+        additionalProperties: true
+      errors:
+        type: array
+        items:
+          type: object
+          additionalProperties: true
+  ErrorResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+      status:
+        type: string
+      data:
+        type: object
+        additionalProperties: true
+      meta:
+        type: object
+        additionalProperties: true
+      errors:
+        type: array
+        items:
+          type: object
+          additionalProperties: true
